@@ -211,8 +211,8 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
 
   <section class="log" id="accesssec" hidden>
     <h2>Private links</h2>
-    <p class="note">Each person gets their own link. Nobody needs a Claude or Google login. Anyone who has a link can use it, so send each one only to that person. Turn a link off when a job is done.</p>
-    <form class="access" id="linkform"><div class="row"><input id="lname" placeholder="Name (e.g. Jordan Smith)" autocomplete="off" required><select id="lrole" aria-label="Role"><option value="client">Client</option><option value="shop">Shop</option></select><input id="ljob" placeholder="Job code (optional)" autocomplete="off"><button class="btn primary" type="submit">Make link</button></div></form>
+    <p class="note">Each person gets their own link. Nobody needs a Claude or Google login. Anyone who has a link can use it, so send each one only to that person. Edit changes the name, email, role or job on the same link (nothing to re-send). Turn a link off when a job is done. The email is only for your records; the portal never emails anyone.</p>
+    <form class="access" id="linkform"><div class="row"><input id="lname" placeholder="Name (e.g. Jordan Smith)" autocomplete="off" required><input id="lemail" type="email" placeholder="Email (optional, for your records)" autocomplete="off"><select id="lrole" aria-label="Role"><option value="client">Client</option><option value="shop">Shop</option><option value="crew">Crew</option></select><input id="ljob" placeholder="Job code (optional)" autocomplete="off"><button class="btn primary" type="submit">Make link</button></div></form>
     <ul class="list" id="acclist"></ul>
   </section>
   <section class="log">
@@ -415,7 +415,7 @@ function renderOpts(){
       const it=findHw(state[o.k]); const b=document.createElement("button"); b.type="button"; b.className="swbtn"; b.id="opt-"+o.k;
       b.innerHTML='<span class="hwicon" aria-hidden="true">⚙</span><span class="swt"><b></b><small></small></span><span class="chev">'+(ro?"":"Choose ›")+'</span>';
       b.querySelector("b").textContent=it?(it.brand+" "+it.product):"Not chosen yet";
-      b.querySelector("small").textContent=it?(it.type+(it.picked&&it.picked.dia?" · "+it.picked.dia+"\" ø":"")+(it.picked&&it.picked.len?" × "+it.picked.len+"\"":"")+" · "+(it.approved?"on the approved list":"pending shop approval")):"For "+(state.substrate||"the substrate")+". The shop manager or engineer confirms.";
+      b.querySelector("small").textContent=it?(it.type+hwSize(it.picked).replace(/^ (?!·)/," · ")+" · "+(it.approved?"on the approved list":"pending shop approval")):"For "+(state.substrate||"the substrate")+". The shop manager or engineer confirms.";
       if(ro){b.disabled=true;} else b.addEventListener("click",()=>openHwPicker(o)); d.appendChild(b); box.appendChild(d); return;
     }
     if(o.range){
@@ -492,7 +492,8 @@ const ckey=(coll,code)=>coll+":"+code;
 function findColor(v){ if(!v)return null; const k=String(v).includes(":")?v:ckey("ral-classic",v); return LIB.byKey[k]||null; }
 function colorLabel(v){ const c=findColor(v); return c?(c.code+" "+c.name+(c.finish?" ("+c.finish+")":"")):String(v||"—"); }
 function findHw(v){ if(!v)return null; const [id,dia,len]=String(v).split("|"); const it=LIB.hw.find(x=>x.id===id); return it?Object.assign({},it,{picked:{dia,len},approved:LIB.approved.has(id)}):null; }
-function hwLabel(v){ const it=findHw(v); return it?(it.brand+" "+it.product+(it.picked.dia?" "+it.picked.dia+"\"":"")+(it.picked.len?" × "+it.picked.len+"\"":"")):"not chosen"; }
+function hwSize(p){ p=p||{}; const num=x=>/^[0-9][0-9./ -]*$/.test(String(x||"").trim()); if(p.dia&&!num(p.dia)) return " · size to be confirmed"; return (p.dia?" "+p.dia+"\" ø":"")+(p.len&&num(p.len)?" × "+p.len+"\"":""); }
+function hwLabel(v){ const it=findHw(v); return it?(it.brand+" "+it.product+hwSize(it.picked)):"not chosen"; }
 async function loadLibs(){
   try{ const j=(window.STF_DATA||{}).powder; if(!j)throw 0; LIB.disclaimer=j.disclaimer||""; LIB.finishes=j.finishes||[];
     (j.collections||[]).forEach(col=>{ LIB.collections.push({id:col.id,name:col.name,maker:col.maker});
@@ -632,7 +633,7 @@ function buildRailing(s){
       else box(ps+1.4,.4,ps+1.4,M(0x8f8a82,{metalness:0,roughness:1}),x,.2,0,"Core-drill grout"); }
   });
   const zr=s.mount==="fascia"?-8-ps/2:0;
-  const railMat=s.toprail==="wood"?M(({natural:0xc9a36b,honey:0xb07a3a,walnut:0x5e3a22,espresso:0x33221a,weathered:0x8b857c})[s.stain]||0xc9a36b,{metalness:0,roughness:.8}):fin;
+  const railMat=s.toprail==="wood"?M(({natural:0xc9a36b,honey:0xb07a3a,walnut:0x5e3a22,espresso:0x33221a,weathered:0x6b665e})[s.stain]||0xc9a36b,{metalness:0,roughness:.8}):fin;
   if(s.joint==="cont"){ rail(L+ps,L/2,H-topT/2,zr,"Top rail"); }
   else if(s.joint==="sleeve"){ rail(L/2-.1,L/4,H-topT/2,zr,"Top rail (seg 1)"); rail(L/2-.1,3*L/4,H-topT/2,zr,"Top rail (seg 2)");
     box(4,Math.max(.3,topT*.6),Math.max(.3,topW*.6),M(0xd08a2e,{metalness:.6,roughness:.4}),L/2,H-topT/2,zr,"Internal sleeve (hidden)"); }
@@ -829,14 +830,28 @@ function applyRole(){
 }
 async function portalLinks(fresh){
   const ul=$("acclist"); ul.innerHTML=""; let ls=[]; try{ ls=await window.claude.portal.links("list"); }catch(e){ ul.innerHTML='<li><span></span><span class="empty">Couldn\'t load links.</span><span></span></li>'; return; }
-  ls=ls.filter(l=>l.active&&l.role!=="owner");
+  ls=ls.filter(l=>l.role!=="owner"); ls.sort((x,y)=>(y.active-x.active));
   if(!ls.length){ul.innerHTML='<li style="border-color:var(--line)"><span></span><span class="empty">No links yet. Make one above for each client or shop person.</span><span></span></li>';return;}
-  ls.forEach(l=>{const li=document.createElement("li"); li.innerHTML='<span class="k"></span><span></span><button class="x" type="button" aria-label="Turn this link off">×</button>';
-    li.children[0].textContent=l.role.toUpperCase(); const sp=li.children[1]; sp.textContent=l.name+(l.job?" · "+l.job:"")+" ";
-    const cp=document.createElement("button"); cp.type="button"; cp.className="btn"; cp.textContent=l.uid===fresh?"Copy link (new)":"Copy link";
-    cp.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(l.url); cp.textContent="Copied";}catch(e){ prompt("Copy this link:",l.url); }}); sp.appendChild(cp);
-    li.children[2].addEventListener("click",async()=>{ if(!confirm("Turn off the link for "+l.name+"? It stops working right away."))return; try{await window.claude.portal.links("off",{uid:l.uid}); portalLinks();}catch(e){} });
-    ul.appendChild(li);});
+  const RN={client:"Client",shop:"Shop",crew:"Crew"};
+  const btn=(t,f)=>{const x=document.createElement("button"); x.type="button"; x.className="btn"; x.textContent=t; x.addEventListener("click",f); return x;};
+  ls.forEach(l=>{const li=document.createElement("li"); li.innerHTML='<span class="k"></span><span class="lk"></span><span></span>';
+    if(!l.active) li.style.opacity=".6";
+    li.children[0].textContent=(l.active?"":"OFF · ")+(RN[l.role]||l.role).toUpperCase();
+    const sp=li.children[1]; sp.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center"; const show=()=>{ sp.innerHTML=""; const t=document.createElement("span"); t.textContent=l.name+(l.email?" · "+l.email:"")+(l.job?" · "+l.job:"")+" "; sp.appendChild(t);
+      if(l.active){ const cp=btn(l.uid===fresh?"Copy link (new)":"Copy link",async()=>{try{await navigator.clipboard.writeText(l.url); cp.textContent="Copied";}catch(e){ prompt("Copy this link:",l.url); }}); sp.appendChild(cp);
+        sp.appendChild(btn("Edit",edit));
+        sp.appendChild(btn("Turn off",async()=>{ if(!confirm("Turn off the link for "+l.name+"? It stops working right away. You can turn it back on later."))return; try{await window.claude.portal.links("off",{uid:l.uid}); portalLinks();}catch(e){ status("Couldn't turn it off.","err"); } })); }
+      else sp.appendChild(btn("Turn back on",async()=>{ try{await window.claude.portal.links("on",{uid:l.uid}); status("Link for "+l.name+" works again (same link as before).","ok"); portalLinks();}catch(e){ status("Couldn't turn it on.","err"); } })); };
+    const edit=()=>{ sp.innerHTML=""; const f=document.createElement("form"); f.className="access"; f.style.cssText="display:flex;flex-wrap:wrap;gap:6px";
+      f.innerHTML='<input name="n" aria-label="Name" required><input name="e" type="email" aria-label="Email" placeholder="Email (optional)"><select name="r" aria-label="Role"><option value="client">Client</option><option value="shop">Shop</option><option value="crew">Crew</option></select><input name="j" aria-label="Job code" placeholder="Job code">';
+      f.n.value=l.name; f.e.value=l.email||""; f.r.value=l.role; f.j.value=l.job||"";
+      const sv=document.createElement("button"); sv.type="submit"; sv.className="btn primary"; sv.textContent="Save"; f.appendChild(sv); f.appendChild(btn("Cancel",show));
+      f.addEventListener("submit",async ev=>{ ev.preventDefault(); const ch={uid:l.uid,name:f.n.value.trim(),email:f.e.value.trim(),role:f.r.value,job:f.j.value.trim()};
+        if(ch.role!==l.role&&!confirm("Change "+l.name+" from "+RN[l.role]+" to "+RN[ch.role]+"? Their link stays the same; what they can see changes the next time they open it.")) return;
+        try{ await window.claude.portal.links("edit",ch); status("Saved. "+ch.name+"'s link is the same; nothing to re-send.","ok"); portalLinks(); }
+        catch(e){ status(/invalid/.test((e&&e.message)||"")?"Check the email address (or name) and try again.":"Couldn't save the change.","err"); } });
+      sp.appendChild(f); f.n.focus(); };
+    show(); ul.appendChild(li);});
 }
 async function renderAccess(){
   const ul=$("acclist"); const keys=Object.keys(roles); const ps=U&&keys.length?await U.profiles(keys):{}; ul.innerHTML="";
@@ -885,8 +900,8 @@ async function initDb(){
   applyRole();
   if(owner){ $("accesssec").hidden=false; portalLinks();
     $("linkform").addEventListener("submit",async ev=>{ev.preventDefault(); const name=$("lname").value.trim(); if(!name)return;
-      try{ const r=await window.claude.portal.links("make",{name,role:$("lrole").value,job:$("ljob").value.trim(),app:"configurator"});
-        $("lname").value=""; status("Link made for "+name+". Copy it below and send it only to them.","ok"); portalLinks(r.uid); }
+      try{ const r=await window.claude.portal.links("make",{name,email:$("lemail").value.trim(),role:$("lrole").value,job:$("ljob").value.trim(),app:"configurator"});
+        $("lname").value=""; $("lemail").value=""; status("Link made for "+name+". Copy it below and send it only to them.","ok"); portalLinks(r.uid); }
       catch(e){ status("Couldn't make the link ("+((e&&e.message)||"error")+").","err"); } }); }
   if(owner){ $("logtitle").textContent="All change requests"; $("lognote").textContent="Owner view: every request from clients and the shop. Set status as you work through them.";
     db.collection("requests").onSnapshot(snap=>{snap.docs.forEach(d=>watchUser(d.id));},()=>{});
@@ -908,7 +923,7 @@ $("form").addEventListener("submit",async e=>{
   $("send").disabled=true;
   try{ await db.doc("requests/"+uid).set({lastAt:req.createdAt,lastJob:req.job});
        await db.collection("requests/"+uid+"/items").add(req);
-       try{ const at=Date.now(); const summary=[req.product+" · job "+req.job+" · from "+(req.name||"")+" ("+(req.by.role||"")+") · "+req.urgency]
+       try{ const at=Date.now(); const summary=[req.product+" · job "+req.job+" · from "+(req.name||"")+((req.name||"").toLowerCase().includes("("+(req.by.role||"")+")")?"":" ("+(req.by.role||"")+")")+" · "+req.urgency]
            .concat(req.changes.map(c=>"Change: "+c.label+": "+c.from+" → "+c.to),req.notes.map((n,i)=>"Note #"+(i+1)+" on "+n.part+": "+n.text),req.message?["Message: "+req.message]:[],req.photos.length?[req.photos.length+" photo(s) attached"]:[]).join("\n");
          await db.collection("submissions").doc("cfg-"+uid+"-"+at).set({review:"cfg-"+uid+"-"+at,at,by:uid,audience:owner?"justin":role,job:req.job,title:"Configurator change request",summary}); }catch(e2){}
        status("Sent. Your request is logged as New; you'll see its status below.","ok");
