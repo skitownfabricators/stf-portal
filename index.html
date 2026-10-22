@@ -230,12 +230,12 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
 <meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
 <script src="config.js"></script>
 <script>
-/* STF Portal web shim (rev P0.6, GitHub Pages): gives a page the same claude.use("db" | "user" | "assets") calls it uses as a Claude artifact,
+/* STF Portal web shim (rev P0.7, GitHub Pages): gives a page the same claude.use("db" | "user" | "assets") calls it uses as a Claude artifact,
    backed by the Google Apps Script server over plain JSON (fetch, no cookies, so it works in any browser, even one signed in
    to several Google accounts). Server address: window.STF_SERVER (config.js). Live updates poll every 15 s and right after a write. */
 (function () {
   var q = new URLSearchParams(location.search);
-  var P = window.STF_PORTAL = { token: q.get("k") || "", app: q.get("app") || "configurator", role: "guest", pollMs: 15000 };
+  var P = window.STF_PORTAL = { token: q.get("k") || "", app: window.STF_APP || q.get("app") || "configurator", role: "guest", pollMs: 15000 };
   var code = function (m) { return /permission_denied/.test(m) ? "permission_denied" : /too_large/.test(m) ? "too_large" : /unsupported_type/.test(m) ? "unsupported_type" : /not_found/.test(m) ? "not_found" : /invalid_argument/.test(m) ? "invalid_argument" : "unavailable"; };
   var DEVKEY = "stf-dev-" + (P.token || "none").slice(0, 10), dev = "";
   try { dev = localStorage.getItem(DEVKEY) || ""; } catch (e) {}
@@ -360,11 +360,15 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
     url: function (id) { if (assetCache[id]) return Promise.resolve(assetCache[id]); return run("asset", [id]).then(function (u) { assetCache[id] = u; return u; }); }
   };
 
+  /* review pages: every path lives under the person's own answers for the job (rv/<job>/p/<uid>/...) */
+  db = (function (raw) { var pre = function (p) { return P.app === "review" && P.reviewJob ? "rv/" + P.reviewJob + "/p/" + P.uid + "/" + p : p; };
+    return { doc: function (p) { return raw.doc(pre(p)); }, collection: function (p) { return raw.collection(pre(p)); } }; })(db);
   window.claude = { use: function (name) {
     return booted.then(function () {
       var noJobs = (P.role === "crew" && !(P.jobs || []).length);
       window.STF_ROLE = P.role === "guest" || noJobs ? null : (P.role === "manager" || P.role === "crew" ? "shop" : P.role);
       if (P.role === "guest" || noJobs) return name === "user" ? user : null;
+      if (name === "db" && window.STF_PREVIEW) return null; /* owner preview never saves */
       return name === "db" ? db : name === "user" ? user : name === "assets" ? assets : null;
     });
   }, portal: { links: function (action, args) { return run("links", [action, args || {}]); }, call: function (fn, args) { return run(fn, args || []); }, boot: P } };
@@ -978,13 +982,22 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
   var copy = function (url, b) { (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { b.textContent = "Copied"; }, function () { prompt("Copy this link:", url); }); };
   var ERR = { email_required: "Add their email. The portal sends them a code to open their link.", bad_email: "That email doesn't look right.", email_in_use: "Someone already has that email.",
     shop_required: "Pick their shop.", exists: "That already exists.", bad_code: "Job codes use letters, numbers, - and _ only.", no_shop: "Give the job a shop before sending it.",
-    already_decided: "Already decided.", not_found: "Not found (maybe someone changed it). Reload.", permission_denied: "Not allowed." };
+    already_decided: "Already decided.", not_sent: "Send the job to the portal first.",
+    no_review_file: "The job chat hasn't published this review yet (Drive > STF Portal Reviews > the job code > review.json).", not_found: "Not found (maybe someone changed it). Reload.", permission_denied: "Not allowed." };
   var fail = function (e) { var c = (e && (e.message || e.code)) || ""; say(ERR[c] || ("Couldn't save (" + c + ")."), "err"); };
   var section = function () { var s = $("accesssec"); s.hidden = false; var p = $("stfpanel"); p.innerHTML = ""; return p; };
   var addMsg = function (p) { var m = el("div", { id: "stfmsg", "class": "status", role: "status" }); m.hidden = true; p.appendChild(m);
     if (LAST && Date.now() - LAST.at < 8000) { m.hidden = false; m.className = "status " + (LAST.kind || ""); m.textContent = LAST.m; } };
 
   /* ---------- everyone: job picker, role wording ---------- */
+  function reviewBar() {
+    var rs = (P.reviews || []).filter(function (r) { return r.audience !== "justin"; });
+    if (!rs.length || $("stfrevbar")) return;
+    var b = el("div", { id: "stfrevbar", role: "status" }); b.style.cssText = "display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 16px;background:var(--accent,#2b4a6f);color:#fff;font:600 14px var(--f-body,system-ui)";
+    b.appendChild(el("span", { text: rs.length === 1 ? "Ready for your approval: " + rs[0].job + (rs[0].title ? " · " + rs[0].title : "") : rs.length + " reviews are ready for your approval" }));
+    var a = el("a", { href: "review.html?k=" + encodeURIComponent(P.token || "") + (rs.length === 1 ? "&job=" + encodeURIComponent(rs[0].job) : ""), text: "Open review →" }); a.style.cssText = "color:#fff;text-decoration:underline";
+    b.appendChild(a); document.body.insertBefore(b, document.body.firstChild);
+  }
   function jobPicker() {
     var job = $("job"); if (!job || P.owner) return;
     var js = P.jobs || [];
@@ -1107,6 +1120,14 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
         j.sent ? btn("Un-send", function () { if (confirm("Hide " + j.code + " from everyone's portal?")) run("admin", ["send", { code: j.code, sent: false }]).then(owner, fail); })
                : btn("Send to portal", function () { run("admin", ["send", { code: j.code, sent: true }]).then(function () { say(j.code + " is now in " + names + "'s portal.", "ok"); owner(); }, fail); }, true),
         btn("Edit", function () { li.innerHTML = ""; li.appendChild(jobForm(j, show)); })]));
+      var stage = j.review || "", st = function (v, msg) { return function () { run("admin", ["stage", { code: j.code, stage: v }]).then(function () { say(msg, "ok"); owner(); }, fail); }; };
+      var prev = function (as) { var a = el("a", { href: "review.html?k=" + encodeURIComponent((window.STF_PORTAL || {}).token || "") + "&job=" + encodeURIComponent(j.code) + "&as=" + as, target: "_blank", rel: "noopener", "class": "btn", text: "Preview as " + as }); return a; };
+      var rr = el("div", { "class": "top" }, [el("span", { "class": "tag", text: "Approval: " + ((S.stages || {})[stage] || "Review off") })]);
+      if (!stage) rr.appendChild(btn("Send review to shop", st("shop", "Review is with the shop manager now. They'll see it in their portal."), true));
+      if (stage === "shop") { rr.appendChild(btn("Send review to client", st("client", "Review is with the client now. The shop's answers are locked."), true)); }
+      if (stage === "client") rr.appendChild(btn("Back to shop", st("shop", "Review is back with the shop.")));
+      if (stage) { rr.appendChild(btn("Close review", st("", "Review closed."))); rr.appendChild(prev("shop")); rr.appendChild(prev("client")); }
+      if (j.sent) li.appendChild(rr);
     };
     show(); return li;
   }
@@ -1175,7 +1196,7 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
   window.STFPanel = { render: function () { P = window.STF_PORTAL || {}; if (P.owner) owner(); else if (P.role === "manager") manager(); } };
   (window.__stfBoot || Promise.resolve(P)).then(function (b) {
     P = b || P;
-    var go = function () { jobPicker(); if (P.role === "manager") manager(); };
+    var go = function () { reviewBar(); jobPicker(); if (P.role === "manager") manager(); };
     if (document.readyState === "complete") setTimeout(go, 50); else window.addEventListener("load", function () { setTimeout(go, 50); });
   });
 })();
