@@ -209,12 +209,7 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
     </aside>
   </div>
 
-  <section class="log" id="accesssec" hidden>
-    <h2>Private links</h2>
-    <p class="note">Each person gets their own link. Nobody needs a Claude or Google login. Anyone who has a link can use it, so send each one only to that person. Edit changes the name, email, role or job on the same link (nothing to re-send). Turn a link off when a job is done. The email is only for your records; the portal never emails anyone.</p>
-    <form class="access" id="linkform"><div class="row"><input id="lname" placeholder="Name (e.g. Jordan Smith)" autocomplete="off" required><input id="lemail" type="email" placeholder="Email (optional, for your records)" autocomplete="off"><select id="lrole" aria-label="Role"><option value="client">Client</option><option value="shop">Shop</option><option value="crew">Crew</option></select><input id="ljob" placeholder="Job code (optional)" autocomplete="off"><button class="btn primary" type="submit">Make link</button></div></form>
-    <ul class="list" id="acclist"></ul>
-  </section>
+  <section class="log" id="accesssec" hidden><div id="stfpanel"></div></section>
   <section class="log">
     <h2 id="logtitle">Your requests</h2>
     <p class="note" id="lognote">Requests you send from this page show here with their status.</p>
@@ -235,22 +230,55 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
 <meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
 <script src="config.js"></script>
 <script>
-/* STF Portal web shim (rev P0.4, GitHub Pages): gives a page the same claude.use("db" | "user" | "assets") calls it uses as a Claude artifact,
+/* STF Portal web shim (rev P0.6, GitHub Pages): gives a page the same claude.use("db" | "user" | "assets") calls it uses as a Claude artifact,
    backed by the Google Apps Script server over plain JSON (fetch, no cookies, so it works in any browser, even one signed in
    to several Google accounts). Server address: window.STF_SERVER (config.js). Live updates poll every 15 s and right after a write. */
 (function () {
   var q = new URLSearchParams(location.search);
   var P = window.STF_PORTAL = { token: q.get("k") || "", app: q.get("app") || "configurator", role: "guest", pollMs: 15000 };
   var code = function (m) { return /permission_denied/.test(m) ? "permission_denied" : /too_large/.test(m) ? "too_large" : /unsupported_type/.test(m) ? "unsupported_type" : /not_found/.test(m) ? "not_found" : /invalid_argument/.test(m) ? "invalid_argument" : "unavailable"; };
+  var DEVKEY = "stf-dev-" + (P.token || "none").slice(0, 10), dev = "";
+  try { dev = localStorage.getItem(DEVKEY) || ""; } catch (e) {}
   var run = function (fn, args) {
     if (!window.STF_SERVER) return Promise.reject({ code: "unavailable", message: "STF Portal server address missing (config.js)." });
-    return fetch(window.STF_SERVER, { method: "POST", body: JSON.stringify({ fn: fn, k: P.token, args: args || [] }), redirect: "follow", credentials: "omit" })
+    return fetch(window.STF_SERVER, { method: "POST", body: JSON.stringify({ fn: fn, k: P.token, d: dev, args: args || [] }), redirect: "follow", credentials: "omit" })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (j) { if (!j.ok) throw { code: code(j.error), message: j.error }; return j.result; },
             function (e) { throw e && e.code ? e : { code: "unavailable", message: "Can't reach the STF Portal right now (" + String((e && e.message) || e) + "). Check your connection and reload." }; });
   };
-  /* who am I: asked once; everything else waits for it */
-  var booted = run("boot", [P.app]).then(function (b) { for (var x in b) P[x] = b[x]; return P; },
+  function gate(hint) {
+    return new Promise(function (done) {
+      var go = function () {
+        var w = document.createElement("div");
+        w.setAttribute("role", "dialog"); w.setAttribute("aria-modal", "true"); w.setAttribute("aria-label", "Confirm it's you");
+        w.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(20,22,26,.92);display:flex;align-items:center;justify-content:center;padding:16px;font:15px system-ui,-apple-system,Segoe UI,sans-serif";
+        w.innerHTML = '<div style="background:#fff;color:#16181d;border-radius:12px;max-width:380px;width:100%;padding:22px;display:grid;gap:12px">' +
+          '<b style="font-size:18px;letter-spacing:.03em">SKI TOWN FABRICATORS</b>' +
+          '<div>To keep your link private, we email a 6-digit code the first time you open it on a phone or computer. This device is then remembered for 90 days.</div>' +
+          '<div class="g-msg" style="font-size:14px;color:#555"></div>' +
+          '<button type="button" class="g-send" style="font:600 15px system-ui;padding:11px;border-radius:8px;border:0;background:#16181d;color:#fff;cursor:pointer">Email me a code</button>' +
+          '<form class="g-form" style="display:none;gap:8px;grid-template-columns:1fr auto"><input class="g-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" aria-label="6-digit code" style="font:600 20px ui-monospace,monospace;letter-spacing:.2em;padding:10px;border:1px solid #bbb;border-radius:8px;min-width:0">' +
+          '<button type="submit" style="font:600 15px system-ui;padding:0 16px;border-radius:8px;border:0;background:#16181d;color:#fff;cursor:pointer">Open</button></form>' +
+          '<button type="button" class="g-again" style="display:none;font:14px system-ui;background:none;border:0;color:#555;text-decoration:underline;cursor:pointer;justify-self:start;padding:0">Send a new code</button></div>';
+        document.body.appendChild(w);
+        var q = function (c) { return w.querySelector(c); }, msg = q(".g-msg");
+        var M = { wait_a_minute: "A code was just sent. Wait a minute before asking for another.", too_many_codes: "Too many codes this hour. Try again later.", wrong_code: "That code doesn't match. Check the newest email and try again.", code_expired: "That code has expired (10 minutes) or was used. Send a new one." };
+        msg.textContent = hint ? "We'll send it to " + hint + "." : "";
+        var send = function () { q(".g-send").disabled = true; msg.textContent = "Sending…";
+          run("code", ["send", {}]).then(function (r) { msg.textContent = "Code sent to " + (r.hint || hint) + ". It can take a minute; check spam too."; q(".g-send").style.display = "none"; q(".g-form").style.display = "grid"; q(".g-again").style.display = ""; q(".g-code").focus(); },
+            function (e) { q(".g-send").disabled = false; msg.textContent = M[e.message] || ("Couldn't send the code (" + (e.message || "error") + ")."); if (e.message === "wait_a_minute") { q(".g-form").style.display = "grid"; } }); };
+        q(".g-send").addEventListener("click", send); q(".g-again").addEventListener("click", send);
+        q(".g-form").addEventListener("submit", function (ev) { ev.preventDefault(); msg.textContent = "Checking…";
+          run("code", ["verify", { code: q(".g-code").value }]).then(function (r) { try { localStorage.setItem(DEVKEY, r.device); } catch (e) { msg.textContent = "This browser won't remember the device (private mode?), so you'll need a code each visit."; } dev = r.device; done(); },
+            function (e) { msg.textContent = M[e.message] || ("Couldn't check the code (" + (e.message || "error") + ")."); }); });
+      };
+      if (document.body) go(); else document.addEventListener("DOMContentLoaded", go);
+    });
+  }
+  /* who am I: asked once; everything else waits for it. A person with an email first proves it with an emailed code. */
+  var booted = run("boot", [P.app]).then(function (b) {
+      if (b.needCode) return gate(b.emailHint).then(function () { location.reload(); return new Promise(function () {}); });
+      for (var x in b) P[x] = b[x]; return P; },
     function (e) { P.bootError = e; return P; });
   window.__stfBoot = booted;
   var api = function (ops) { return run("api", [P.app, ops]); };
@@ -334,11 +362,12 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
 
   window.claude = { use: function (name) {
     return booted.then(function () {
-      window.STF_ROLE = P.role === "guest" ? null : P.role;
-      if (P.role === "guest") return name === "user" ? user : null;
+      var noJobs = (P.role === "crew" && !(P.jobs || []).length);
+      window.STF_ROLE = P.role === "guest" || noJobs ? null : (P.role === "manager" || P.role === "crew" ? "shop" : P.role);
+      if (P.role === "guest" || noJobs) return name === "user" ? user : null;
       return name === "db" ? db : name === "user" ? user : name === "assets" ? assets : null;
     });
-  }, portal: { links: function (action, args) { return run("links", [action, args || {}]); }, boot: P } };
+  }, portal: { links: function (action, args) { return run("links", [action, args || {}]); }, call: function (fn, args) { return run(fn, args || []); }, boot: P } };
 })();
 </script>
 
@@ -823,36 +852,12 @@ function applyRole(){
   const nm=(me&&me.name)||"you";
   if(owner){ role="shop"; $("whobadge").textContent="Owner · "+nm; }
   else { role=uid?(roles[uid]||window.STF_ROLE||null):null;
-    $("whobadge").textContent=role?((role==="shop"?"Shop":"Client")+" · "+nm):(uid?"Not on access list · "+nm:"Preview only"); }
+    $("whobadge").textContent=role?(((window.STF_PORTAL||{}).roleName||(role==="shop"?"Shop":"Client"))+" · "+nm):(uid?"Not on access list · "+nm:"Preview only"); }
   const canShop=role==="shop"; segShop.disabled=!canShop; segShop.hidden=!canShop&&!!db; if(canShop&&!window.__stfModeSet&&!owner){ window.__stfModeSet=true; setMode("shop"); }
   if(!canShop&&mode==="shop") setMode("client");
   if(me&&me.name&&!$("who").value) $("who").value=me.name;
 }
-async function portalLinks(fresh){
-  const ul=$("acclist"); ul.innerHTML=""; let ls=[]; try{ ls=await window.claude.portal.links("list"); }catch(e){ ul.innerHTML='<li><span></span><span class="empty">Couldn\'t load links.</span><span></span></li>'; return; }
-  ls=ls.filter(l=>l.role!=="owner"); ls.sort((x,y)=>(y.active-x.active));
-  if(!ls.length){ul.innerHTML='<li style="border-color:var(--line)"><span></span><span class="empty">No links yet. Make one above for each client or shop person.</span><span></span></li>';return;}
-  const RN={client:"Client",shop:"Shop",crew:"Crew"};
-  const btn=(t,f)=>{const x=document.createElement("button"); x.type="button"; x.className="btn"; x.textContent=t; x.addEventListener("click",f); return x;};
-  ls.forEach(l=>{const li=document.createElement("li"); li.innerHTML='<span class="k"></span><span class="lk"></span><span></span>';
-    if(!l.active) li.style.opacity=".6";
-    li.children[0].textContent=(l.active?"":"OFF · ")+(RN[l.role]||l.role).toUpperCase();
-    const sp=li.children[1]; sp.style.cssText="display:flex;flex-wrap:wrap;gap:6px;align-items:center"; const show=()=>{ sp.innerHTML=""; const t=document.createElement("span"); t.textContent=l.name+(l.email?" · "+l.email:"")+(l.job?" · "+l.job:"")+" "; sp.appendChild(t);
-      if(l.active){ const cp=btn(l.uid===fresh?"Copy link (new)":"Copy link",async()=>{try{await navigator.clipboard.writeText(l.url); cp.textContent="Copied";}catch(e){ prompt("Copy this link:",l.url); }}); sp.appendChild(cp);
-        sp.appendChild(btn("Edit",edit));
-        sp.appendChild(btn("Turn off",async()=>{ if(!confirm("Turn off the link for "+l.name+"? It stops working right away. You can turn it back on later."))return; try{await window.claude.portal.links("off",{uid:l.uid}); portalLinks();}catch(e){ status("Couldn't turn it off.","err"); } })); }
-      else sp.appendChild(btn("Turn back on",async()=>{ try{await window.claude.portal.links("on",{uid:l.uid}); status("Link for "+l.name+" works again (same link as before).","ok"); portalLinks();}catch(e){ status("Couldn't turn it on.","err"); } })); };
-    const edit=()=>{ sp.innerHTML=""; const f=document.createElement("form"); f.className="access"; f.style.cssText="display:flex;flex-wrap:wrap;gap:6px";
-      f.innerHTML='<input name="n" aria-label="Name" required><input name="e" type="email" aria-label="Email" placeholder="Email (optional)"><select name="r" aria-label="Role"><option value="client">Client</option><option value="shop">Shop</option><option value="crew">Crew</option></select><input name="j" aria-label="Job code" placeholder="Job code">';
-      f.n.value=l.name; f.e.value=l.email||""; f.r.value=l.role; f.j.value=l.job||"";
-      const sv=document.createElement("button"); sv.type="submit"; sv.className="btn primary"; sv.textContent="Save"; f.appendChild(sv); f.appendChild(btn("Cancel",show));
-      f.addEventListener("submit",async ev=>{ ev.preventDefault(); const ch={uid:l.uid,name:f.n.value.trim(),email:f.e.value.trim(),role:f.r.value,job:f.j.value.trim()};
-        if(ch.role!==l.role&&!confirm("Change "+l.name+" from "+RN[l.role]+" to "+RN[ch.role]+"? Their link stays the same; what they can see changes the next time they open it.")) return;
-        try{ await window.claude.portal.links("edit",ch); status("Saved. "+ch.name+"'s link is the same; nothing to re-send.","ok"); portalLinks(); }
-        catch(e){ status(/invalid/.test((e&&e.message)||"")?"Check the email address (or name) and try again.":"Couldn't save the change.","err"); } });
-      sp.appendChild(f); f.n.focus(); };
-    show(); ul.appendChild(li);});
-}
+async function portalLinks(){ if(window.STFPanel) window.STFPanel.render(); }
 async function renderAccess(){
   const ul=$("acclist"); const keys=Object.keys(roles); const ps=U&&keys.length?await U.profiles(keys):{}; ul.innerHTML="";
   if(!keys.length){ul.innerHTML='<li style="border-color:var(--line)"><span></span><span class="empty">No one added yet. Add the client and shop emails above.</span><span></span></li>';}
@@ -864,7 +869,7 @@ function status(t,kind){const s=$("status"); s.hidden=false; s.className="status
 function fmt(iso){try{return new Date(iso).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});}catch(e){return iso;}}
 function row(r,path){
   const tr=document.createElement("tr");
-  const cells=[fmt(r.createdAt),r.job,(r.name||"")+" · "+((r.by&&r.by.role)||(r.mode==="shop"?"shop":"client")),
+  const cells=[fmt(r.createdAt),r.job,(r.name||"")+" · "+(({manager:"shop manager",shop:"shop manager",crew:"shop crew"})[r.by&&r.by.role]||(r.by&&r.by.role)||(r.mode==="shop"?"shop":"client")),
     (r.changes||[]).map(c=>c.label+": "+c.from+" → "+c.to).join("\n")||"—",
     (r.notes||[]).map((n,i)=>"#"+(i+1)+" "+n.part+": "+n.text).join("\n")+(r.message?((r.notes&&r.notes.length?"\n":"")+"Msg: "+r.message):"")||"—"];
   cells.forEach((c,i)=>{const td=document.createElement("td"); if(i<2)td.className="mono"; td.style.whiteSpace=i>=2?"pre-line":""; td.textContent=c; tr.appendChild(td);});
@@ -898,11 +903,7 @@ async function initDb(){
   db.doc("config/palette").onSnapshot(snap=>{const d=snap.exists?snap.data():{}; LIB.palette=Array.isArray(d&&d.railing)?d.railing:[];},()=>{});
   db.doc("access/roles").onSnapshot(snap=>{const d=snap.exists?snap.data():{}; roles=Object.assign({},(d&&d.ids)||{}); applyRole(); if(owner)portalLinks();},()=>{applyRole();});
   applyRole();
-  if(owner){ $("accesssec").hidden=false; portalLinks();
-    $("linkform").addEventListener("submit",async ev=>{ev.preventDefault(); const name=$("lname").value.trim(); if(!name)return;
-      try{ const r=await window.claude.portal.links("make",{name,email:$("lemail").value.trim(),role:$("lrole").value,job:$("ljob").value.trim(),app:"configurator"});
-        $("lname").value=""; $("lemail").value=""; status("Link made for "+name+". Copy it below and send it only to them.","ok"); portalLinks(r.uid); }
-      catch(e){ status("Couldn't make the link ("+((e&&e.message)||"error")+").","err"); } }); }
+  if(owner){ portalLinks(); }
   if(owner){ $("logtitle").textContent="All change requests"; $("lognote").textContent="Owner view: every request from clients and the shop. Set status as you work through them.";
     db.collection("requests").onSnapshot(snap=>{snap.docs.forEach(d=>watchUser(d.id));},()=>{});
     if(uid)watchUser(uid);
@@ -916,17 +917,17 @@ $("form").addEventListener("submit",async e=>{
   if(product==="railing"&&state.picket==="other"&&!$("msg").value.trim()){status("You picked Other for the picket. Describe the size and shape you want in the message box.","err");$("msg").focus();return;}
   const req={job:$("job").value.trim(),product,mode,name:$("who").value.trim(),urgency:$("urg").value,message:$("msg").value.trim(),
     changes:ch,notes:notes.map(n=>({part:n.part,text:n.text,pos:n.pos,photos:n.photos||[]})),photos:reqPhotos.slice(),options:Object.assign({},state),status:"New",createdAt:new Date().toISOString(),
-    by:{id:uid,role:owner?"owner":role}};
+    by:{id:uid,role:owner?"owner":((window.STF_PORTAL||{}).role||role)}};
   try{localStorage.setItem("stf-theme-who",req.name);}catch(err){}
   if(!db||!uid){status("This link can't save requests (preview only). Ask Ski Town Fabricators for your private link.","err");return;}
   if(!owner&&!role){status("This link isn't active. Ask Ski Town Fabricators for a new one.","err");return;}
   $("send").disabled=true;
   try{ await db.doc("requests/"+uid).set({lastAt:req.createdAt,lastJob:req.job});
        await db.collection("requests/"+uid+"/items").add(req);
-       try{ const at=Date.now(); const summary=[req.product+" · job "+req.job+" · from "+(req.name||"")+((req.name||"").toLowerCase().includes("("+(req.by.role||"")+")")?"":" ("+(req.by.role||"")+")")+" · "+req.urgency]
+       try{ const at=Date.now(); const summary=[req.product+" · job "+req.job+" · from "+(req.name||"")+" ("+((window.STF_PORTAL||{}).roleName||req.by.role||"")+") · "+req.urgency]
            .concat(req.changes.map(c=>"Change: "+c.label+": "+c.from+" → "+c.to),req.notes.map((n,i)=>"Note #"+(i+1)+" on "+n.part+": "+n.text),req.message?["Message: "+req.message]:[],req.photos.length?[req.photos.length+" photo(s) attached"]:[]).join("\n");
          await db.collection("submissions").doc("cfg-"+uid+"-"+at).set({review:"cfg-"+uid+"-"+at,at,by:uid,audience:owner?"justin":role,job:req.job,title:"Configurator change request",summary}); }catch(e2){}
-       status("Sent. Your request is logged as New; you'll see its status below.","ok");
+       status((window.STF_PORTAL||{}).role==="crew"?"Sent to "+(((window.STF_PORTAL||{}).managers||[]).join(" / ")||"your shop manager")+" for sign-off. You'll see its status below.":"Sent. Your request is logged as New; you'll see its status below.","ok");
        notes=[]; reqPhotos=[]; $("reqthumbs").innerHTML=""; $("msg").value=""; renderNotes();
   }catch(err){ status(err&&err.code==="invalid_argument"?"Your access to this page is view-only, so it can't save requests. Ask Ski Town Fab for contributor access.":"Couldn't send ("+((err&&err.code)||"error")+"). Try again in a moment.","err"); }
   finally{$("send").disabled=false;}
@@ -938,3 +939,244 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
 })();
 </script>
 
+
+<style>
+#stfpanel{display:grid;gap:14px}
+#stfpanel h3{font:700 13px var(--f-display);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
+#stfpanel .frm{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#stfpanel .frm input,#stfpanel .frm select,#stfpanel textarea{font:13px var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);flex:1 1 160px;min-width:0}
+#stfpanel textarea{width:100%;min-height:60px;flex-basis:100%}
+#stfpanel .rows{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+#stfpanel .rows>li{display:grid;gap:6px;font-size:13px;border-left:3px solid var(--accent);padding:6px 8px;background:var(--chip);border-radius:0 4px 4px 0}
+#stfpanel .rows>li.off{opacity:.6;border-left-color:var(--line)}
+#stfpanel .top{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#stfpanel .tag{font:600 11px var(--f-mono);color:var(--muted);text-transform:uppercase}
+#stfpanel .chips{display:flex;flex-wrap:wrap;gap:6px}
+#stfpanel .chip{font:500 12px var(--f-body);border:1px solid var(--line);border-radius:999px;padding:3px 8px;background:var(--panel)}
+#stfpanel .chip button{border:0;background:none;color:var(--muted);cursor:pointer;margin-left:4px;font-size:13px}
+#stfpanel .sent{font:600 11px var(--f-mono);padding:1px 6px;border-radius:3px;background:var(--accent);color:var(--panel)}
+#stfpanel .unsent{font:600 11px var(--f-mono);padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+#stfpanel .checks{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;flex-basis:100%}
+#stfpanel .sum{white-space:pre-wrap;font-size:12px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+</style>
+<script>
+/* STF Portal panels (rev P0.6): the owner's People, shops and jobs; the shop manager's crew; job picker; role wording. */
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var P = window.STF_PORTAL || {};
+  var run = function (fn, a) { return window.claude.portal.call(fn, a); };
+  /* the page's own status() is private to its script, so write to its status box directly (and to the panel's message line) */
+  var LAST = null;
+  var say = function (m, kind) {
+    var s = $("status"); if (s) { s.hidden = false; s.className = "status " + (kind || ""); s.textContent = m; }
+    LAST = { m: m, kind: kind, at: Date.now() };
+    var pm = $("stfmsg"); if (pm) { pm.hidden = false; pm.className = "status " + (kind || ""); pm.textContent = m; }
+  };
+  var el = function (tag, attrs, kids) { var e = document.createElement(tag); for (var k in (attrs || {})) { if (k === "text") e.textContent = attrs[k]; else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), attrs[k]); else e.setAttribute(k, attrs[k]); } (kids || []).forEach(function (c) { if (c) e.appendChild(c); }); return e; };
+  var btn = function (t, f, primary) { return el("button", { type: "button", "class": "btn" + (primary ? " primary" : ""), text: t, onclick: f }); };
+  var opt = function (v, t, sel) { var o = el("option", { value: v, text: t }); if (sel) o.selected = true; return o; };
+  var copy = function (url, b) { (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { b.textContent = "Copied"; }, function () { prompt("Copy this link:", url); }); };
+  var ERR = { email_required: "Add their email. The portal sends them a code to open their link.", bad_email: "That email doesn't look right.", email_in_use: "Someone already has that email.",
+    shop_required: "Pick their shop.", exists: "That already exists.", bad_code: "Job codes use letters, numbers, - and _ only.", no_shop: "Give the job a shop before sending it.",
+    already_decided: "Already decided.", not_found: "Not found (maybe someone changed it). Reload.", permission_denied: "Not allowed." };
+  var fail = function (e) { var c = (e && (e.message || e.code)) || ""; say(ERR[c] || ("Couldn't save (" + c + ")."), "err"); };
+  var section = function () { var s = $("accesssec"); s.hidden = false; var p = $("stfpanel"); p.innerHTML = ""; return p; };
+  var addMsg = function (p) { var m = el("div", { id: "stfmsg", "class": "status", role: "status" }); m.hidden = true; p.appendChild(m);
+    if (LAST && Date.now() - LAST.at < 8000) { m.hidden = false; m.className = "status " + (LAST.kind || ""); m.textContent = LAST.m; } };
+
+  /* ---------- everyone: job picker, role wording ---------- */
+  function jobPicker() {
+    var job = $("job"); if (!job || P.owner) return;
+    var js = P.jobs || [];
+    if (!js.length) {
+      job.value = "";
+      var send = $("send"); if (send) send.disabled = true;
+      say(P.role === "crew" ? "Your shop manager hasn't turned on a job for you yet. You can still look around." : "No jobs have been sent to your portal yet. Ski Town Fabricators will let you know when one is ready.", "err");
+      return;
+    }
+    job.value = js[0].code;
+    if (js.length > 1) {
+      var s = el("select", { id: "jobpick", "aria-label": "Job" }); s.style.cssText = "font:13px var(--f-mono);margin-left:6px";
+      js.forEach(function (j) { s.appendChild(opt(j.code, j.code + (j.title ? " · " + j.title : ""))); });
+      s.addEventListener("change", function () { job.value = s.value; });
+      job.parentNode.appendChild(s); job.style.display = "none";
+    }
+    if (P.role === "crew") {
+      var send2 = $("send");
+      if (P.level !== "requests" && send2) { send2.textContent = "Send question"; }
+      var who = (P.managers || []).join(" / ") || "your shop manager";
+      var st = $("status"); if (st && !st.hidden && st.textContent) return; /* don't cover a message the page just showed */
+      say((P.level === "requests" ? "Your requests and questions go to " : "Your questions go to ") + who + " first." + (P.level === "requests" ? "" : " Option changes you try here aren't sent; describe what you'd change in the message."));
+    }
+  }
+
+  /* ---------- owner: people, shops, jobs ---------- */
+  var S = null;
+  function owner() {
+    run("admin", ["state", {}]).then(function (st) { S = st; drawOwner(); }, function () { var p = section(); p.appendChild(el("p", { "class": "note", text: "Couldn't load people and jobs. Reload the page." })); });
+  }
+  function shopName(id) { var s = (S.shops || []).filter(function (x) { return x.id === id; })[0]; return s ? s.name : ""; }
+  function person(uid) { return (S.people || []).filter(function (x) { return x.uid === uid; })[0]; }
+  function drawOwner() {
+    var p = section();
+    p.appendChild(el("h2", { text: "People, shops and jobs" })); addMsg(p);
+    p.appendChild(el("p", { "class": "note", text: "Save each person once with their email. Each gets one link for good: the first time they open it on a phone or computer, the portal emails them a 6-digit code. Jobs show in their portal only after you press Send to portal. Shops are walled off: a job only takes its own shop's people. Shop managers add their own crew." }));
+    // shops
+    p.appendChild(el("h3", { text: "Shops" }));
+    var chips = el("div", { "class": "chips" }); (S.shops || []).forEach(function (s) { chips.appendChild(el("span", { "class": "chip", text: s.name })); });
+    if (!(S.shops || []).length) chips.appendChild(el("span", { "class": "note", text: "No shops yet. Add one (e.g. your fabricator) before adding shop managers." }));
+    p.appendChild(chips);
+    var sIn = el("input", { placeholder: "New shop name", "aria-label": "New shop name" });
+    p.appendChild(el("form", { "class": "frm", onsubmit: function (ev) { ev.preventDefault(); if (!sIn.value.trim()) return; run("admin", ["addshop", { name: sIn.value.trim() }]).then(function () { say("Shop added.", "ok"); owner(); }, fail); } }, [sIn, el("button", { type: "submit", "class": "btn", text: "Add shop" })]));
+    // people
+    p.appendChild(el("h3", { text: "People" }));
+    p.appendChild(personForm(null));
+    var ul = el("ul", { "class": "rows" });
+    var ppl = (S.people || []).slice().sort(function (a, b) { return (b.active - a.active) || (shopName(a.shop) || "~").localeCompare(shopName(b.shop) || "~") || a.role.localeCompare(b.role) || a.name.localeCompare(b.name); });
+    if (!ppl.length) ul.appendChild(el("li", {}, [el("span", { "class": "note", text: "No one saved yet." })]));
+    ppl.forEach(function (x) { ul.appendChild(personRow(x)); });
+    p.appendChild(ul);
+    // jobs
+    p.appendChild(el("h3", { text: "Jobs" }));
+    p.appendChild(jobForm(null));
+    var jl = el("ul", { "class": "rows" });
+    if (!(S.jobs || []).length) jl.appendChild(el("li", {}, [el("span", { "class": "note", text: "No jobs yet." })]));
+    (S.jobs || []).forEach(function (j) { jl.appendChild(jobRow(j)); });
+    p.appendChild(jl);
+  }
+  function personForm(x, done) {
+    var n = el("input", { placeholder: "Name", "aria-label": "Name", required: "" }), em = el("input", { type: "email", placeholder: "Email (they get a code here)", "aria-label": "Email", required: "" });
+    var role = el("select", { "aria-label": "Role" }, [opt("manager", "Shop manager"), opt("crew", "Shop crew"), opt("client", "Client")]);
+    var shop = el("select", { "aria-label": "Shop" }, [opt("", "Shop…")].concat((S.shops || []).map(function (s) { return opt(s.id, s.name); })));
+    var co = el("input", { placeholder: "Company (optional)", "aria-label": "Company" });
+    var lvl = el("select", { "aria-label": "Crew level" }, [opt("questions", "Questions only"), opt("requests", "Questions + change requests")]);
+    if (x) { n.value = x.name; em.value = x.email || ""; role.value = x.role; shop.value = x.shop || ""; co.value = x.company || ""; lvl.value = x.level || "questions"; }
+    var sync = function () { shop.style.display = role.value === "client" ? "none" : ""; co.style.display = role.value === "client" ? "" : "none"; lvl.style.display = role.value === "crew" ? "" : "none"; };
+    role.addEventListener("change", sync); sync();
+    var f = el("form", { "class": "frm" }, [n, em, role, shop, co, lvl, el("button", { type: "submit", "class": "btn primary", text: x ? "Save" : "Save person" }), x ? btn("Cancel", done) : null]);
+    f.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var a = { name: n.value.trim(), email: em.value.trim(), role: role.value, shop: shop.value, company: co.value.trim(), level: lvl.value };
+      if (x) { a.uid = x.uid; if (a.role !== x.role && !confirm("Change " + x.name + " from " + x.roleName + " to " + role.options[role.selectedIndex].text + "? Same link; what they can see changes next time they open it.")) return; }
+      run("admin", [x ? "edit" : "make", a]).then(function (r) { say(x ? "Saved. Same link, nothing to re-send." : a.name + " saved. Copy their link below and send it to them.", "ok"); owner(); }, fail);
+    });
+    return f;
+  }
+  function personRow(x) {
+    var li = el("li", { "class": x.active ? "" : "off" });
+    var show = function () {
+      li.innerHTML = "";
+      var desc = x.name + " · " + (x.email || "no email") + " · " + (x.role === "client" ? (x.company || "client") : shopName(x.shop)) + (x.role === "crew" ? " · " + (x.level === "requests" ? "questions + change requests" : "questions only") : "");
+      var top = el("div", { "class": "top" }, [el("span", { "class": "tag", text: (x.active ? "" : "off · ") + x.roleName }), el("span", { text: desc })]);
+      if (x.active) {
+        var cb = btn("Copy link", function () { copy(x.url, cb); }); top.appendChild(cb);
+        top.appendChild(btn("Edit", function () { li.innerHTML = ""; li.appendChild(personForm(x, show)); }));
+        top.appendChild(btn("Turn off", function () { if (confirm("Turn off " + x.name + "'s link? It stops right away; you can turn it back on.")) run("admin", ["off", { uid: x.uid }]).then(owner, fail); }));
+      } else top.appendChild(btn("Turn back on", function () { run("admin", ["on", { uid: x.uid }]).then(function () { say(x.name + "'s link works again (same link).", "ok"); owner(); }, fail); }));
+      top.appendChild(btn("Delete", function () { if (confirm("Delete " + x.name + "? Their link stops for good and they come off every job. (A record is kept in the portal sheet's links_history tab.) To pause instead, use Turn off.")) run("admin", ["delete", { uid: x.uid }]).then(function () { say(x.name + " deleted.", "ok"); owner(); }, fail); }));
+      li.appendChild(top);
+    };
+    show(); return li;
+  }
+  function jobForm(j, done) {
+    var code = el("input", { placeholder: "Job code (e.g. SP-261101-DECK)", "aria-label": "Job code", required: "" }), title = el("input", { placeholder: "Title (e.g. Deck railing)", "aria-label": "Title" });
+    var shop = el("select", { "aria-label": "Shop" }, [opt("", "Shop…")].concat((S.shops || []).map(function (s) { return opt(s.id, s.name); })));
+    var people = j ? j.people.slice() : [];
+    var chips = el("div", { "class": "chips" }), add = el("select", { "aria-label": "Add a person to this job" });
+    if (j) { code.value = j.code; code.readOnly = true; title.value = j.title || ""; shop.value = j.shop || ""; }
+    var redraw = function () {
+      people = people.filter(function (u) { var x = person(u); return x && (x.role === "client" || (x.role === "manager" && x.shop === shop.value)); });
+      chips.innerHTML = "";
+      people.forEach(function (u) { var x = person(u); chips.appendChild(el("span", { "class": "chip" }, [document.createTextNode(x.name + " · " + x.roleName), el("button", { type: "button", "aria-label": "Remove " + x.name, text: "×", onclick: function () { people = people.filter(function (y) { return y !== u; }); redraw(); } })])); });
+      add.innerHTML = ""; add.appendChild(opt("", shop.value ? "Add a person…" : "Pick the shop first"));
+      (S.people || []).filter(function (x) { return x.active && people.indexOf(x.uid) < 0 && (x.role === "client" || (x.role === "manager" && x.shop === shop.value)); })
+        .forEach(function (x) { add.appendChild(opt(x.uid, x.name + " · " + x.roleName + (x.role === "client" && x.company ? " · " + x.company : ""))); });
+    };
+    add.addEventListener("change", function () { if (add.value) { people.push(add.value); redraw(); } });
+    shop.addEventListener("change", redraw); redraw();
+    var f = el("form", { "class": "frm" }, [code, title, shop, add, chips, el("p", { "class": "note", text: "Shop crew are added to jobs by their shop manager." }), el("button", { type: "submit", "class": "btn primary", text: j ? "Save job" : "Add job" }), j ? btn("Cancel", done) : null]);
+    f.addEventListener("submit", function (ev) { ev.preventDefault(); run("admin", [j ? "editjob" : "addjob", { code: code.value, title: title.value.trim(), shop: shop.value, people: people }]).then(function () { say(j ? "Job saved." : "Job added. Press Send to portal when it's ready for them.", "ok"); owner(); }, fail); });
+    return f;
+  }
+  function jobRow(j) {
+    var li = el("li");
+    var show = function () {
+      li.innerHTML = "";
+      var names = j.people.map(function (u) { var x = person(u); return x ? x.name : null; }).filter(Boolean).join(", ") || "nobody yet";
+      li.appendChild(el("div", { "class": "top" }, [el("span", { "class": j.sent ? "sent" : "unsent", text: j.sent ? "SENT" : "NOT SENT" }), el("b", { text: j.code }), el("span", { text: (j.title ? j.title + " · " : "") + (shopName(j.shop) || "no shop") + " · " + names }),
+        j.sent ? btn("Un-send", function () { if (confirm("Hide " + j.code + " from everyone's portal?")) run("admin", ["send", { code: j.code, sent: false }]).then(owner, fail); })
+               : btn("Send to portal", function () { run("admin", ["send", { code: j.code, sent: true }]).then(function () { say(j.code + " is now in " + names + "'s portal.", "ok"); owner(); }, fail); }, true),
+        btn("Edit", function () { li.innerHTML = ""; li.appendChild(jobForm(j, show)); })]));
+    };
+    show(); return li;
+  }
+
+  /* ---------- shop manager: crew ---------- */
+  var T = null;
+  function manager() { run("team", ["list", {}]).then(function (t) { T = t; drawTeam(); }, function () { var p = section(); p.appendChild(el("p", { "class": "note", text: "Couldn't load your crew. Reload the page." })); }); }
+  function drawTeam() {
+    var p = section();
+    p.appendChild(el("h2", { text: "My crew · " + (T.shopName || "") })); addMsg(p);
+    p.appendChild(el("p", { "class": "note", text: "Add your crew and pick what each can do. Crew see nothing until you turn a job on for them; then they see the Shop view. Their questions and change requests come to you first, and only what you approve goes to Ski Town Fabricators." }));
+    // waiting
+    p.appendChild(el("h3", { text: "Waiting on you" + (T.waiting.length ? " (" + T.waiting.length + ")" : "") }));
+    var wl = el("ul", { "class": "rows" });
+    if (!T.waiting.length) wl.appendChild(el("li", {}, [el("span", { "class": "note", text: "Nothing waiting." })]));
+    T.waiting.forEach(function (w) {
+      var note = el("input", { placeholder: "Note to STF or your crew (optional)", "aria-label": "Note" });
+      wl.appendChild(el("li", {}, [el("div", { "class": "top" }, [el("b", { text: w.from }), el("span", { text: (w.job ? w.job + " · " : "") + String(w.at || "").slice(0, 16).replace("T", " ") })]),
+        el("div", { "class": "sum", text: w.summary || ((w.changes || []).length ? (w.changes.length + " change(s)") : "") + (w.message ? "\nMessage: " + w.message : "") }),
+        el("div", { "class": "frm" }, [note, btn("Approve and send to STF", function () { run("team", ["decide", { item: w.item, ok: true, note: note.value }]).then(function () { say("Sent to Ski Town Fabricators.", "ok"); manager(); }, fail); }, true),
+          btn("Don't send", function () { run("team", ["decide", { item: w.item, ok: false, note: note.value }]).then(function () { say("Not sent. " + w.from + " sees it was held back.", "ok"); manager(); }, fail); })])]));
+    });
+    p.appendChild(wl);
+    // crew
+    p.appendChild(el("h3", { text: "Crew" }));
+    p.appendChild(crewForm(null));
+    var cl = el("ul", { "class": "rows" });
+    if (!T.crew.length) cl.appendChild(el("li", {}, [el("span", { "class": "note", text: "No crew yet." })]));
+    T.crew.slice().sort(function (a, b) { return (b.active - a.active) || a.name.localeCompare(b.name); }).forEach(function (c) { cl.appendChild(crewRow(c)); });
+    p.appendChild(cl);
+    // permission request
+    p.appendChild(el("h3", { text: "Ask STF for a permission change" }));
+    p.appendChild(el("p", { "class": "note", text: "For anything not in the menu above (for example letting someone approve, see pricing or skip your sign-off). Crew can never have more than you." }));
+    var who = el("select", { "aria-label": "About" }, [opt("", "About my whole crew")].concat(T.crew.map(function (c) { return opt(c.uid, "About " + c.name); })));
+    var txt = el("textarea", { placeholder: "What would you like to change, and why?", "aria-label": "Permission request" });
+    var pf = el("form", { "class": "frm" }, [who, txt, el("button", { type: "submit", "class": "btn", text: "Send request to STF" })]);
+    pf.addEventListener("submit", function (ev) { ev.preventDefault(); if (!txt.value.trim()) return; run("team", ["permreq", { text: txt.value, crew: who.value }]).then(function () { txt.value = ""; say("Sent. Ski Town Fabricators will get back to you.", "ok"); }, fail); });
+    p.appendChild(pf);
+  }
+  function crewForm(c, done) {
+    var n = el("input", { placeholder: "Name", "aria-label": "Name", required: "" }), em = el("input", { type: "email", placeholder: "Email (they get a code here)", "aria-label": "Email", required: "" });
+    var lvl = el("select", { "aria-label": "What they can do" }, [opt("questions", "Questions only"), opt("requests", "Questions + change requests")]);
+    var checks = el("div", { "class": "checks" }, [el("span", { "class": "note", text: T.jobs.length ? "Jobs they can see:" : "No jobs in your portal yet; turn jobs on for them later." })]);
+    var boxes = T.jobs.map(function (j) { var b = el("input", { type: "checkbox", value: j.code }); if (c && c.crewJobs.indexOf(j.code) >= 0) b.checked = true; checks.appendChild(el("label", {}, [b, document.createTextNode(" " + j.code + (j.title ? " · " + j.title : ""))])); return b; });
+    if (c) { n.value = c.name; em.value = c.email; lvl.value = c.level; }
+    var f = el("form", { "class": "frm" }, [n, em, lvl, checks, el("button", { type: "submit", "class": "btn primary", text: c ? "Save" : "Add crew" }), c ? btn("Cancel", done) : null]);
+    f.addEventListener("submit", function (ev) { ev.preventDefault();
+      var a = { name: n.value.trim(), email: em.value.trim(), level: lvl.value, crewJobs: boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; }) };
+      if (c) a.uid = c.uid;
+      run("team", [c ? "editcrew" : "addcrew", a]).then(function () { say(c ? "Saved. Same link." : a.name + " added. Copy their link below and send it to them.", "ok"); manager(); }, fail); });
+    return f;
+  }
+  function crewRow(c) {
+    var li = el("li", { "class": c.active ? "" : "off" });
+    var show = function () {
+      li.innerHTML = "";
+      var top = el("div", { "class": "top" }, [el("span", { "class": "tag", text: (c.active ? "" : "off · ") + "Shop crew" }), el("span", { text: c.name + " · " + c.email + " · " + (c.level === "requests" ? "questions + change requests" : "questions only") + " · jobs: " + (c.crewJobs.join(", ") || "none") })]);
+      if (c.active) { var cb = btn("Copy link", function () { copy(c.url, cb); }); top.appendChild(cb); top.appendChild(btn("Edit", function () { li.innerHTML = ""; li.appendChild(crewForm(c, show)); }));
+        top.appendChild(btn("Turn off", function () { if (confirm("Turn off " + c.name + "'s link?")) run("team", ["off", { uid: c.uid }]).then(manager, fail); })); }
+      else top.appendChild(btn("Turn back on", function () { run("team", ["on", { uid: c.uid }]).then(manager, fail); }));
+      li.appendChild(top);
+    };
+    show(); return li;
+  }
+
+  window.STFPanel = { render: function () { P = window.STF_PORTAL || {}; if (P.owner) owner(); else if (P.role === "manager") manager(); } };
+  (window.__stfBoot || Promise.resolve(P)).then(function (b) {
+    P = b || P;
+    var go = function () { jobPicker(); if (P.role === "manager") manager(); };
+    if (document.readyState === "complete") setTimeout(go, 50); else window.addEventListener("load", function () { setTimeout(go, 50); });
+  });
+})();
+</script>
