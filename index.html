@@ -64,6 +64,8 @@ aside.sheet{background:var(--panel);border:1px solid var(--line);border-radius:8
 .opt .choices button .star{color:var(--client);font-weight:700;margin-left:3px}
 .opt .choices button[aria-pressed="true"] .star{color:var(--shop)}
 .opt input[type=range]{grid-column:2;width:100%}
+.opt .swbtn{grid-column:2;min-width:0}
+.opt.preview .lbl::after{display:none}
 .opt .rv{grid-column:2;font:500 12px var(--f-mono);color:var(--muted)}
 .opt.changed .lbl::after{content:"changed";font:600 10px var(--f-mono);margin-left:8px;padding:1px 6px;border-radius:3px;background:var(--accent);color:var(--panel)}
 .sym{width:34px;height:34px;display:block}
@@ -110,7 +112,8 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 .swbtn{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;cursor:pointer;font:inherit}
 .swbtn:hover{border-color:currentColor}.swbtn .sw{width:38px;height:38px;border-radius:6px;border:1px solid rgba(0,0,0,.2);flex:none}
-.swbtn .swt{flex:1;min-width:0;display:flex;flex-direction:column}.swbtn small{opacity:.75;font-size:12px}.swbtn .chev{font-size:13px;opacity:.8;white-space:nowrap}
+.swbtn .swt{flex:1;min-width:0;display:flex;flex-direction:column}.swbtn small{opacity:.75;font-size:12px}.swbtn .chev{font-size:13px;opacity:.8;white-space:nowrap;flex:none}
+.swbtn b{overflow-wrap:anywhere}
 .hwicon{width:38px;height:38px;display:grid;place-items:center;font-size:22px;border-radius:6px;background:rgba(127,127,127,.15);flex:none}
 .pick{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center}
 .pickpanel{background:var(--panel,#fff);color:var(--ink,#111);width:min(920px,100%);max-height:92vh;display:flex;flex-direction:column;border-radius:14px 14px 0 0;overflow:hidden}
@@ -354,6 +357,7 @@ const CATALOG={
    {k:"infill",who:"C",label:"Infill",choices:[["vert","Vertical pickets"],["horiz","Horizontal bars"],["cable","Cable (1/8\" stainless)"]],def:"vert"},
    {k:"picket",who:"C",label:"Picket / baluster",dep:o=>o.infill!=="cable",choices:[["sqt34","3/4\" square tube"],["sqs12","1/2\" solid square"],["rdt58","5/8\" round tube"],["other","Other (describe)"]],def:"sqt34",note:"other sizes go through a change request"},
    {k:"toprail",who:"C",label:"Top rail",choices:[["tube","2×1 tube"],["pipe","1-1/4 pipe (round)"],["flat","2\"×3/8 flat"],["wood","Wood cap"]],def:"tube"},
+   {k:"stain",who:"C",label:"Wood stain",preview:true,dep:o=>o.toprail==="wood",choices:[["natural","Natural / clear"],["honey","Honey oak"],["walnut","Walnut"],["espresso","Espresso"],["weathered","Weathered gray"]],def:"natural",note:"for the 3D view only. You set the final stain with the woodworker making the cap; it isn't part of the steel order"},
    {k:"pshape",who:"C",label:"Post shape",choices:[["sq","Square tube"],["rd","Round pipe"]],def:"sq"},
    {k:"finish",who:"C",label:"Finish",choices:[["pc","Powder coat"],["raw","Raw steel, clear coat"],["galv","Hot-dip galvanized"]],def:"pc"},
    {k:"color",who:"C",label:"Powder coat color",type:"color",def:"RAL 9005",dep:o=>o.finish==="pc",note:"pick from the color library; final color is confirmed on a physical chip"},
@@ -397,7 +401,7 @@ function renderOpts(){
     const ro=o.who==="T"&&mode!=="shop"&&o.cv==="read";
     if(o.who==="T"&&mode!=="shop"&&!o.cv)return;
     if(o.dep&&!o.dep(state))return;
-    const d=document.createElement("div"); d.className="opt"+(String(state[o.k])!==String(o.def)?" changed":"");
+    const d=document.createElement("div"); d.className="opt"+(o.preview?" preview":"")+(String(state[o.k])!==String(o.def)?" changed":"");
     d.innerHTML='<svg class="sym" viewBox="0 0 40 40" aria-label="'+(o.who==="C"?"Client decides":"Shop decides")+'"><use href="#'+(o.who==="C"?"oct":"tri")+'"/></svg><div class="lbl"></div>';
     d.querySelector(".lbl").textContent=o.label; if(ro||(o.who==="T"&&mode!=="shop"&&o.cv==="edit")){const e=document.createElement("em");e.textContent=ro?" · shop decides — pin a note to ask":" · shop decides, you can request a change";d.querySelector(".lbl").appendChild(e);} else if(o.note){const e=document.createElement("em");e.textContent=" · "+o.note;d.querySelector(".lbl").appendChild(e);}
     if(o.type==="color"){
@@ -462,7 +466,7 @@ function renderShop(){
   SHOPINFO[product].forEach(([k,v])=>{const li=document.createElement("li"); li.innerHTML='<span class="k"></span><span></span><span></span>'; li.children[0].textContent=k; li.children[1].textContent=v; ul.appendChild(li);});
 }
 function changes(){
-  return CATALOG[product].opts.filter(o=>(o.who==="C"||mode==="shop"||o.cv==="edit")&&(!o.dep||o.dep(state))&&String(state[o.k])!==String(o.def))
+  return CATALOG[product].opts.filter(o=>!o.preview&&(o.who==="C"||mode==="shop"||o.cv==="edit")&&(!o.dep||o.dep(state))&&String(state[o.k])!==String(o.def))
     .map(o=>({key:o.k,label:o.label,who:o.who==="C"?"CLIENT":"SHOP",from:label(o,o.def),to:label(o,state[o.k])}));
 }
 function renderChanges(){
@@ -628,7 +632,7 @@ function buildRailing(s){
       else box(ps+1.4,.4,ps+1.4,M(0x8f8a82,{metalness:0,roughness:1}),x,.2,0,"Core-drill grout"); }
   });
   const zr=s.mount==="fascia"?-8-ps/2:0;
-  const railMat=s.toprail==="wood"?M(0x8a5a33,{metalness:0,roughness:.8}):fin;
+  const railMat=s.toprail==="wood"?M(({natural:0xc9a36b,honey:0xb07a3a,walnut:0x5e3a22,espresso:0x33221a,weathered:0x8b857c})[s.stain]||0xc9a36b,{metalness:0,roughness:.8}):fin;
   if(s.joint==="cont"){ rail(L+ps,L/2,H-topT/2,zr,"Top rail"); }
   else if(s.joint==="sleeve"){ rail(L/2-.1,L/4,H-topT/2,zr,"Top rail (seg 1)"); rail(L/2-.1,3*L/4,H-topT/2,zr,"Top rail (seg 2)");
     box(4,Math.max(.3,topT*.6),Math.max(.3,topW*.6),M(0xd08a2e,{metalness:.6,roughness:.4}),L/2,H-topT/2,zr,"Internal sleeve (hidden)"); }
