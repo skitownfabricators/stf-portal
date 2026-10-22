@@ -874,7 +874,7 @@ function row(r,path){
     (r.notes||[]).map((n,i)=>"#"+(i+1)+" "+n.part+": "+n.text).join("\n")+(r.message?((r.notes&&r.notes.length?"\n":"")+"Msg: "+r.message):"")||"—"];
   cells.forEach((c,i)=>{const td=document.createElement("td"); if(i<2)td.className="mono"; td.style.whiteSpace=i>=2?"pre-line":""; td.textContent=c; tr.appendChild(td);});
   const td=document.createElement("td");
-  if(owner&&path){ const sel=document.createElement("select"); sel.setAttribute("aria-label","Status");
+  if(owner&&path&&!r.held){ const sel=document.createElement("select"); sel.setAttribute("aria-label","Status");
     ["New","Reviewing","Approved","Rejected","Done"].forEach(v=>{const o=document.createElement("option");o.textContent=v;if(v===r.status)o.selected=true;sel.appendChild(o);});
     sel.addEventListener("change",async()=>{try{await db.doc(path).update({status:sel.value,statusBy:uid,statusAt:new Date().toISOString()});}catch(e){sel.value=r.status;}}); td.appendChild(sel);
     if(r.statusBy){const sm=document.createElement("div"); sm.className="note"; sm.dataset.uid=r.statusBy; sm.dataset.pre="by "; sm.dataset.post=" · "+fmt(r.statusAt); sm.textContent="by … · "+fmt(r.statusAt); td.appendChild(sm);}
