@@ -1,5 +1,5 @@
 /**
- * STF Portal (Google Apps Script web app) - rev P0.8, Oct 23 2026. Owner: FAB - Apps.
+ * STF Portal (Google Apps Script web app) - rev P0.8.1, Oct 23 2026. Owner: FAB - Apps.
  *
  * P0.8.1: owner-only preview of any published review (STF Portal Reviews/<code>/review.json), even before the job is in the portal;
  *   the owner's menu lists them under Jobs and People, shops and jobs offers "Add as job" (not sent).
