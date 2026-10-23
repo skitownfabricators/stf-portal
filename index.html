@@ -1290,9 +1290,11 @@ body.sn-review #snbar{margin:0}
 .sngrid{display:grid;gap:8px}
 .sngrid>button{display:flex;justify-content:space-between;align-items:center;text-align:left;font:15px system-ui;border:1px solid var(--sn-line);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;padding:12px;cursor:pointer;min-height:48px}
 .sngrid>button:hover{background:var(--sn-soft)}
-#snq{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:840;width:52px;height:52px;border-radius:50%;border:0;background:#16181d;color:#fff;font:700 24px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}
+#snview.snhome .snvhead button{display:inline-flex;align-items:center;gap:8px}
+.snhello{font:700 22px system-ui!important;margin-top:4px!important}
+#snq{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:860;width:52px;height:52px;border-radius:50%;border:0;background:#16181d;color:#fff;font:700 24px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}
 #snq .sndotr{position:absolute;top:4px;right:4px;border:2px solid #fff;width:13px;height:13px}
-#snpop{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:78px;z-index:841;width:min(300px,calc(100vw - 32px));background:var(--sn-panel);color:var(--sn-ink);border:1px solid var(--sn-line);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:8px}
+#snpop{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:78px;z-index:861;width:min(300px,calc(100vw - 32px));background:var(--sn-panel);color:var(--sn-ink);border:1px solid var(--sn-line);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:8px}
 #snpop b{display:block;padding:8px 10px 4px;font-size:13px;color:var(--sn-muted);letter-spacing:.06em;text-transform:uppercase}
 #snpop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;font:15px system-ui;color:var(--sn-ink);background:none;border:0;border-radius:8px;padding:10px;min-height:44px;cursor:pointer}
 #snpop button:hover{background:var(--sn-soft)}
@@ -1411,6 +1413,7 @@ body.sn-review #snbar{margin:0}
     drawer.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
     drawer.appendChild(el("div", { "class": "snhead" }, [el("div", {}, [el("b", { text: P.name || "Ski Town Fabricators" }), el("span", { text: (P.roleName || "") + (P.shopName ? " · " + P.shopName : "") })]),
       el("button", { type: "button", "class": "snx", "aria-label": "Close menu", text: "×", onclick: closeDrawer })]));
+    var hu = el("ul"); hu.appendChild(item("Home", { href: href("cfg", {}) })); drawer.appendChild(hu);
     // needs my attention
     var att = P.attention || [];
     drawer.appendChild(el("h4", {}, [document.createTextNode("Needs my attention"), att.length ? el("span", { "class": "snbadge", text: String(att.length) }) : null]));
@@ -1476,10 +1479,13 @@ body.sn-review #snbar{margin:0}
     opts = opts || {};
     if (name === "people" && !window.STFPanel) { location.href = href("cfg", { view: "people", job: opts.job || "" }); return; }
     closeView();
-    var T = { people: role() === "owner" ? "People, shops and jobs" : "My crew", job: "Job overview", faq: "Common questions", ask: "Ask Ski Town Fabricators", mine: "My questions and answers", howto: "Show me how to…", helpadmin: "Help questions" };
+    var T = { home: "Home", people: role() === "owner" ? "People, shops and jobs" : "My crew", job: "Job overview", faq: "Common questions", ask: "Ask Ski Town Fabricators", mine: "My questions and answers", howto: "Show me how to…", helpadmin: "Help questions" };
     viewBody = el("div", { "class": "snvbody" });
-    view = el("section", { id: "snview", role: "dialog", "aria-modal": "true", "aria-label": T[name] || name }, [el("div", { "class": "snvhead" }, [el("h2", { text: T[name] || name }), el("button", { type: "button", text: "Close ✕", onclick: closeView })]), viewBody]);
-    view.addEventListener("keydown", function (e) { if (e.key === "Escape" && !cardEl) closeView(); });
+    var headBtns = name === "home"
+      ? [el("button", { type: "button", "aria-haspopup": "dialog", onclick: function () { openDrawer(); } }, [el("span", { "class": "snham", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]), document.createTextNode(" Menu")]), el("h2", { text: "Ski Town Fabricators portal" })]
+      : [el("h2", { text: T[name] || name }), opts.from === "home" ? el("button", { type: "button", text: "← Home", onclick: function () { openView("home", { noFocus: true }); } }) : el("button", { type: "button", text: "Close ✕", onclick: closeView })];
+    view = el("section", { id: "snview", role: "dialog", "aria-modal": "true", "aria-label": T[name] || name, "class": name === "home" ? "snhome" : null }, [el("div", { "class": "snvhead" }, headBtns), viewBody]);
+    view.addEventListener("keydown", function (e) { if (e.key === "Escape" && !cardEl && viewName !== "home") closeView(); });
     document.body.appendChild(view); document.body.style.overflow = "hidden"; viewName = name;
     (VIEWS[name] || function () { viewBody.appendChild(el("p", { text: "Not found." })); })(viewBody, opts);
     var h = $("button", view); if (h && !opts.noFocus) h.focus();
@@ -1495,6 +1501,41 @@ body.sn-review #snbar{margin:0}
     return out;
   }
   var VIEWS = {
+    home: function (box) {
+      var r = role();
+      box.appendChild(el("p", { "class": "snhello", text: "Welcome, " + first() + "." }));
+      box.appendChild(el("p", { "class": "snnote", text: r === "owner" ? "Everything in the portal starts here: what needs you, every job, people and help."
+        : r === "manager" ? "Your jobs from Ski Town Fabricators, anything waiting for your approval, and your crew."
+        : r === "crew" ? "The jobs your shop manager turned on for you." : "Your project with Ski Town Fabricators and anything waiting for you." }));
+      var grid = function (items) { var g = el("div", { "class": "sngrid" }); items.forEach(function (it) { g.appendChild(el("button", { type: "button", onclick: it.go }, [el("span", {}, [el("b", { text: it.t }), it.s ? el("span", { "class": "snnote", text: " · " + it.s }) : null]), el("span", { text: "→" })])); }); return g; };
+      var nav = function (h) { return function () { location.href = h; }; };
+      // needs my attention
+      box.appendChild(el("h3", { text: "Needs my attention" }));
+      var att = P.attention || [];
+      if (!att.length) box.appendChild(el("p", { "class": "snnote", text: "Nothing waiting on you right now." }));
+      else box.appendChild(grid(att.map(function (a) {
+        if (a.kind === "review") return { t: a.text, s: a.job + (a.title ? " · " + a.title : ""), go: nav(href("review", { job: a.job })) };
+        if (a.kind === "stf" || a.kind === "ship") return { t: a.text, s: a.job, go: function () { openView("people", { job: a.job, from: "home" }); } };
+        if (a.kind === "crew") return { t: a.text, go: function () { openView("people"); } };
+        if (a.kind === "help") return { t: a.text, go: function () { openView("helpadmin"); } };
+        if (a.kind === "requests") return { t: a.text, go: function () { closeView(); var lt = document.getElementById("logtitle"); if (lt) lt.scrollIntoView(); } };
+        return { t: a.text || "", go: function () {} };
+      })));
+      // jobs
+      box.appendChild(el("h3", { text: r === "client" ? "Your projects" : "Jobs" }));
+      var js = P.jobs || [];
+      if (!js.length) box.appendChild(el("p", { "class": "snnote", text: r === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet. Ski Town Fabricators will let you know when one is ready." }));
+      else box.appendChild(grid(js.map(function (j) { var rv = (P.reviews || []).filter(function (x) { return x.job === j.code; })[0];
+        return { t: j.code, s: (j.title || "") + (rv && rv.stageName ? " · " + rv.stageName : ""), go: function () { openView("job", { job: j.code, from: "home" }); } }; })));
+      if (r === "owner" && (P.drafts || []).length) {
+        box.appendChild(el("h3", { text: "Published reviews, not in the portal yet (only you see these)" }));
+        box.appendChild(grid((P.drafts || []).map(function (d) { return { t: d.code, s: (d.title || "") + " · preview as shop", go: nav(href("review", { job: d.code, as: "shop" })) }; })));
+      }
+      if (r === "owner" || r === "manager") { box.appendChild(el("h3", { text: r === "owner" ? "People" : "My crew" }));
+        box.appendChild(grid([{ t: r === "owner" ? "People, shops and jobs" : "My crew: add, jobs, approvals", go: function () { openView("people"); } }].concat(r === "owner" ? [{ t: "Help questions", go: function () { openView("helpadmin"); } }] : []))); }
+      box.appendChild(el("h3", { text: "Help" }));
+      box.appendChild(grid([{ t: "Take the tour", go: function () { startTour(true); } }, { t: "Show me how to…", go: function () { openView("howto", { from: "home" }); } }, { t: "Common questions", go: function () { openView("faq", { from: "home" }); } }, { t: "Ask Ski Town Fabricators", go: function () { openView("ask", { from: "home" }); } }]));
+    },
     people: function (box, o) { window.STFPanel.people(box, o); },
     job: function (box, o) {
       var j = (P.jobs || []).filter(function (x) { return x.code === o.job; })[0] || { code: o.job };
@@ -1505,7 +1546,7 @@ body.sn-review #snbar{margin:0}
       var g = el("div", { "class": "sngrid" });
       var go = function (t, h) { g.appendChild(el("button", { type: "button", onclick: function () { location.href = h; } }, [document.createTextNode(t), el("span", { text: "→" })])); };
       if (rv && rv.audience !== "justin") go("Open the review", href("review", { job: j.code }));
-      if (rv && rv.audience === "justin") { go("Preview review as shop", href("review", { job: j.code, as: "shop" })); go("Preview review as client", href("review", { job: j.code, as: "client" })); }
+      if (role() === "owner") { go("Preview review as shop", href("review", { job: j.code, as: "shop" })); go("Preview review as client", href("review", { job: j.code, as: "client" })); }
       go("Configurator: try changes, send requests", href("cfg", { job: j.code }));
       go("My requests and their status", href("cfg", { job: j.code }) + "#logtitle");
       if (role() === "owner") g.appendChild(el("button", { type: "button", onclick: function () { openView("people", { job: j.code }); } }, [document.createTextNode("Manage this job (people, send, approval)"), el("span", { text: "→" })]));
@@ -1727,7 +1768,7 @@ body.sn-review #snbar{margin:0}
       waitPage.then(function () {
         setTimeout(function () {
           var v = Q.get("view"), g = Q.get("guide");
-          if (g) runGuide(g); else if (v) openView(v, { job: Q.get("job") || "" }); else startTour(false);
+          if (g) runGuide(g); else if (v) openView(v, { job: Q.get("job") || "" }); else if (PAGE === "cfg" && !Q.get("job")) openView("home", { noFocus: true }); else startTour(false);
         }, PAGE === "review" ? 400 : 900);
       });
     };

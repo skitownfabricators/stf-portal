@@ -1,6 +1,7 @@
 /**
- * STF Portal (Google Apps Script web app) - rev P0.8.1, Oct 23 2026. Owner: FAB - Apps.
+ * STF Portal (Google Apps Script web app) - rev P0.8.2, Oct 23 2026. Owner: FAB - Apps.
  *
+ * P0.8.2: faster opening ("Checking access"): each table is read once per request, and the owner's list of published reviews is kept for 5 minutes.
  * P0.8.1: owner-only preview of any published review (STF Portal Reviews/<code>/review.json), even before the job is in the portal;
  *   the owner's menu lists them under Jobs and People, shops and jobs offers "Add as job" (not sent).
  * P0.8: menu + help + sign-off routes (Apps Spec P19).
@@ -34,7 +35,7 @@
  * Nothing here shares a file or folder. Deploying the web app ("Anyone") is Justin's own action.
  */
 
-var REV = 'P0.8.1';
+var REV = 'P0.8.2';
 var POLL_MAX_OPS = 60;
 var FRONT_URL = 'https://skitownfabricators.github.io/stf-portal/';
 var ROLE_NAMES = { owner: 'Owner', manager: 'Shop manager', crew: 'Shop crew', client: 'Client' };
@@ -70,6 +71,7 @@ function doPost(e) {
   try {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var k = String(req.k || ''), a = req.args || [];
+    ROWS_ = {};
     CTX.device = String(req.d || '');
     var fns = {
       boot: function () { return boot_(k, a[0]); },
@@ -141,6 +143,7 @@ function setup() {
     puts this account's email on the owner link (so the owner link needs a code too) and sends a test email. */
 function upgrade() {
   ensureTables_(ss_());
+  ROWS_ = {};
   var sh = sheet_('links'), h = header_(sh);
   rows_('links').forEach(function (l) {
     if (l.role === 'shop') sh.getRange(l._row, h.indexOf('role') + 1).setValue('manager');
@@ -189,16 +192,20 @@ function linkUrl_(token) {
 }
 
 /* ---------------- tables ---------------- */
+var ROWS_ = {}; /* P0.8.2: each table is read once per request; any write clears it */
 function rows_(name) {
-  var v = sheet_(name).getDataRange().getValues(); var h = v[0].map(String); var out = [];
+  if (!ROWS_[name]) ROWS_[name] = sheet_(name).getDataRange().getValues();
+  var v = ROWS_[name]; var h = v[0].map(String); var out = [];
   for (var i = 1; i < v.length; i++) { var o = { _row: i + 1 }; for (var j = 0; j < h.length; j++) o[h[j]] = v[i][j]; out.push(o); }
   return out;
 }
 function setCells_(name, row, obj) {
+  ROWS_ = {};
   var sh = sheet_(name), h = header_(sh);
   for (var k in obj) { var c = h.indexOf(k); if (c >= 0) sh.getRange(row, c + 1).setValue(obj[k]); }
 }
 function appendObj_(name, obj) {
+  ROWS_ = {};
   var sh = sheet_(name), h = header_(sh);
   sh.appendRow(h.map(function (c) { return obj[c] === undefined ? '' : obj[c]; }));
 }
@@ -659,6 +666,11 @@ function reviewsFolder_() {
 }
 /** Reviews a job chat published to Drive whose code isn't a portal job yet (owner only sees these). */
 function unlistedReviews_() {
+  var cache = null; try { cache = CacheService.getScriptCache(); var hit = cache.get('drafts'); if (hit) { var have0 = jobs_().map(function (j) { return j.code; }); return JSON.parse(hit).filter(function (d) { return have0.indexOf(d.code) < 0; }); } } catch (e) { cache = null; }
+  var out0 = unlistedReviewsNow_(); try { if (cache) cache.put('drafts', JSON.stringify(out0), 300); } catch (e) {}
+  return out0;
+}
+function unlistedReviewsNow_() {
   var have = jobs_().map(function (j) { return j.code; }), out = [], it = reviewsFolder_().getFolders();
   while (it.hasNext()) {
     var f = it.next(), code = f.getName(); if (have.indexOf(code) >= 0 || !/^[A-Z0-9][A-Z0-9_.\-]*$/.test(code)) continue;
