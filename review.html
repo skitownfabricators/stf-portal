@@ -1,5 +1,5 @@
 
-<title>STF Review</title>
+<title>STF Portal · Review</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -479,7 +479,7 @@ nav.rail { margin-top: 22px; display: flex; gap: 10px; align-items: center; flex
           return v;
         };
         window.STF_REVIEW = walk(r.review);
-        try { var h1 = document.getElementById("deckTitle"); if (h1 && r.review.title) h1.textContent = r.review.title; document.title = (r.review.title || "Review") + " · Ski Town Fabricators"; } catch (e) {}
+        try { var h1 = document.getElementById("deckTitle"); if (h1 && r.review.title) h1.textContent = r.review.title; document.title = (r.review.title || "Review") + " · STF Portal"; } catch (e) {}
         var eng = document.getElementById("stfengine"), s = document.createElement("script");
         s.textContent = eng.textContent; done();
         if (window.STFNav) window.STFNav.context({ preview: r.preview, as: as, locked: r.locked, stageName: r.stageName });
