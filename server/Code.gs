@@ -1,6 +1,8 @@
 /**
  * STF Portal (Google Apps Script web app) - rev P0.8, Oct 23 2026. Owner: FAB - Apps.
  *
+ * P0.8.1: owner-only preview of any published review (STF Portal Reviews/<code>/review.json), even before the job is in the portal;
+ *   the owner's menu lists them under Jobs and People, shops and jobs offers "Add as job" (not sent).
  * P0.8: menu + help + sign-off routes (Apps Spec P19).
  *   - boot gives each person "Needs my attention" items and their new help answers (the pages' menu shows them).
  *   - help(): "Help: common questions" (STF Portal Help/help.md in Drive), Ask Ski Town Fabricators (help tab + a
@@ -32,7 +34,7 @@
  * Nothing here shares a file or folder. Deploying the web app ("Anyone") is Justin's own action.
  */
 
-var REV = 'P0.8';
+var REV = 'P0.8.1';
 var POLL_MAX_OPS = 60;
 var FRONT_URL = 'https://skitownfabricators.github.io/stf-portal/';
 var ROLE_NAMES = { owner: 'Owner', manager: 'Shop manager', crew: 'Shop crew', client: 'Client' };
@@ -111,7 +113,8 @@ function boot_(token, appParam) {
   b.level = who.role === 'crew' ? (who.level || 'questions') : 'requests';
   b.jobs = visibleJobs_(who).map(function (j) { return { code: j.code, title: j.title || '', shop: j.shop, shopName: shopName_(j.shop) }; });
   b.job = b.jobs.length ? b.jobs[0].code : '';
-  b.reviews = jobs_().map(function (j) { var a = reviewAudience_(who, j); return a ? { job: j.code, title: j.title || '', stage: j.review, stageName: STAGES[j.review] || '', audience: a } : null; }).filter(Boolean);
+  b.reviews = jobs_().map(function (j) { var a = reviewAudience_(who, j); return a && (j.review || who.role !== 'owner') ? { job: j.code, title: j.title || '', stage: j.review, stageName: STAGES[j.review] || '', audience: a } : null; }).filter(Boolean);
+  if (who.role === 'owner') { try { b.drafts = unlistedReviews_(); } catch (e) { b.drafts = []; } }
   if (who.role === 'crew') b.managers = findLinks_({ role: 'manager', shop: who.shop }).filter(function (l) { return l.active; }).map(function (l) { return l.name; });
   try { var n = nav_(who); b.attention = n.attention; b.helpNew = n.helpNew; } catch (e) { b.attention = []; b.helpNew = 0; }
   return b;
@@ -287,8 +290,8 @@ function setStage_(j, st) { var c = { review: st, stageAt: new Date().toISOStrin
 /* Which review audience this person gets for a job right now ('' = none). Manager: from the shop stage on (they keep seeing
    what they sent). Client: client stage. Crew: none (approvals are the shop manager's). Owner: any open review (preview). */
 function reviewAudience_(who, j) {
+  if (j && who.role === 'owner') return 'justin'; /* P0.8.1: the owner can preview any job's review, sent or not, open or not */
   if (!j || !j.review) return '';
-  if (who.role === 'owner') return 'justin';
   if (!canSeeJob_(who, j.code)) return '';
   if (who.role === 'manager') return 'shop'; /* every open stage; they can only change answers while it's with the shop */
   if (who.role === 'client' && (j.review === 'client' || (j.clientSeen && (j.review === 'stf' || j.review === 'done')))) return 'client';
@@ -461,7 +464,7 @@ function admin(token, action, args) {
   var lock = action === 'list' || action === 'state' ? null : LockService.getScriptLock(); if (lock) lock.waitLock(20000);
   try {
     if (action === 'state') return { shops: shops_().map(function (s) { return { id: s.id, name: s.name }; }), people: findLinks_({}).filter(function (l) { return l.role !== 'owner'; }).map(personOut_),
-      jobs: jobs_().map(function (j) { return { code: j.code, title: j.title, shop: j.shop, people: j.people, sent: j.sent, review: j.review, stageAt: j.stageAt ? String(j.stageAt) : '', clientSign: j.clientSign, shopClientSign: j.shopClientSign }; }), levels: LEVELS, roles: ROLE_NAMES, stages: STAGES };
+      jobs: jobs_().map(function (j) { return { code: j.code, title: j.title, shop: j.shop, people: j.people, sent: j.sent, review: j.review, stageAt: j.stageAt ? String(j.stageAt) : '', clientSign: j.clientSign, shopClientSign: j.shopClientSign }; }), levels: LEVELS, roles: ROLE_NAMES, stages: STAGES, drafts: unlistedReviews_() };
     if (action === 'list') return findLinks_({}).map(personOut_);
     if (action === 'addshop') {
       var nm = String(args.name || '').trim().slice(0, 80); if (!nm) throw new Error('invalid_argument');
@@ -654,6 +657,16 @@ function reviewsFolder_() {
   var it = DriveApp.getFoldersByName('STF Portal Reviews'); var f = it.hasNext() ? it.next() : DriveApp.createFolder('STF Portal Reviews');
   props.setProperty('REVIEWS_ID', f.getId()); return f;
 }
+/** Reviews a job chat published to Drive whose code isn't a portal job yet (owner only sees these). */
+function unlistedReviews_() {
+  var have = jobs_().map(function (j) { return j.code; }), out = [], it = reviewsFolder_().getFolders();
+  while (it.hasNext()) {
+    var f = it.next(), code = f.getName(); if (have.indexOf(code) >= 0 || !/^[A-Z0-9][A-Z0-9_.\-]*$/.test(code)) continue;
+    var title = ''; try { var R = reviewJson_(code); if (!R) continue; title = R.title || ''; } catch (e) { title = '(review.json unreadable)'; }
+    out.push({ code: code, title: title });
+  }
+  return out;
+}
 function reviewFolder_(job) { var it = reviewsFolder_().getFoldersByName(job); return it.hasNext() ? it.next() : null; }
 function reviewJson_(job) {
   var f = reviewFolder_(job); if (!f) return null;
@@ -693,6 +706,7 @@ function review(token, action, args) {
   var who = whoFromToken_(token); if (who.role === 'guest' || who.role === 'locked') throw new Error('permission_denied');
   var job = String(args.job || '');
   var j = jobs_().filter(function (x) { return x.code === job; })[0];
+  if (!j && who.role === 'owner' && reviewFolder_(job)) j = { code: job, review: '', clientSign: false, shopClientSign: false, title: '' }; /* published, not a portal job yet */
   var aud = reviewAudience_(who, j); if (!aud) throw new Error('no_review');
   if (who.role === 'owner' && (args.as === 'shop' || args.as === 'client')) aud = args.as;
   var f = reviewFolder_(job);

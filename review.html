@@ -609,7 +609,7 @@ const REVIEW = window.STF_REVIEW;
     S.forEach((s, k) => { const st = slideStatus(s); const label = EXT ? (st === "need" ? "Needs answer" : (s.decisions && s.decisions.length ? "Answered" : "Info")) : st === "need" ? "Needs OK" : (s.decisions ? (routedOnly(s) ? "Routed" : "Decided") : "Done");
       tr.append(el("button", { type: "button", onclick: () => go(k + 1) }, el("span", {}, (k + 1) + ". " + s.title), el("span", { class: "status " + (st === "need" ? "need" : "done"), text: label }))); });
     if (SIGNER) { const ap = pages[pages.length - 1]; const st = slideStatus(ap);
-      tr.append(el("button", { type: "button", onclick: () => go(pages.length - 1) }, el("span", {}, (pages.length - 1) + ". " + ap.title), el("span", { class: "status " + (st === "need" ? "need" : "done"), text: st === "need" ? "Sign at the end" : "Signed" }))); }
+      tr.append(el("button", { type: "button", onclick: () => go(pages.length - 1) }, el("span", {}, (pages.length - 1) + ". " + ap.title), el("span", { class: "status " + (st === "need" ? "need" : "done"), text: (REVIEW.audience === "client" && REVIEW.clientSignRequired === false) ? (st === "need" ? "Send at the end" : "Ready to send") : (st === "need" ? "Sign at the end" : "Signed") }))); }
     const right = el("div", { class: "card" }, el("p", { class: "label", text: "In this review" }), tr);
     if (state.readOnly) right.append(el("p", { class: "ro", text: window.STF_LOCKED ? "This review has moved on (" + (window.STF_LOCKED_STAGE || "") + "), so answers can't be changed here. What you sent is saved." : window.STF_PREVIEW ? "Preview: nothing is saved." : "Submitting isn't available in this view. Use Copy decisions as text and paste them in the chat." }));
     const rt = el("ul", { class: "routing" });
@@ -1167,7 +1167,7 @@ const REVIEW = window.STF_REVIEW;
   function approvalPage(p) {
     const panel = el("div", { class: "panel" });
     panel.append(el("div", { class: "card" }, el("div", { class: "slidehead" }, el("span", { class: "status " + slideStatus(p), text: slideStatus(p) === "need" ? (CLIENT_NOSIGN ? "Ready when you are" : "Needs your signature") : (CLIENT_NOSIGN ? "Ready to send" : "Signed") }), el("span", { class: "eyebrow", text: "Last page" })),
-      el("h2", { text: p.title }), el("p", { class: "lede", text: "Everything you answered is listed below. " + (CLIENT_NOSIGN ? "Choose one, " : (nDelegated() ? "Choose what happens next, " : "") + (needChecks() ? "tick the boxes, sign, " : noSig() ? "write what needs to change, " : "write the changes, sign, ")) + "then press " + (noSig() ? "Send my answers" : "Sign and submit") + " at the bottom." })));
+      el("h2", { text: p.title }), el("p", { class: "lede", text: "Everything you answered is listed below. " + (CLIENT_NOSIGN ? "Choose one, " : (s => s.charAt(0).toUpperCase() + s.slice(1))((nDelegated() ? "choose what happens next, " : "") + (needChecks() ? "tick the boxes, sign, " : noSig() ? "write what needs to change, " : "write the changes, sign, "))) + "then press " + (noSig() ? "Send my answers" : "Sign and submit") + " at the bottom." })));
     const ul = el("ul", { class: "bul" }); decisionIds.forEach(id => { const o = D[id].options.find(x => x.id === pickOf(id)); ul.append(el("li", {}, el("b", { text: D[id].title + ": " }), o ? clip(o.label, 120) : "(no answer yet)", noteOf(id).trim() ? " · " + clip(noteOf(id), 160) : "")); });
     const nDel = decisionIds.filter(id => pickOf(id) === "delegate").length;
     if (nDel) ul.append(el("li", { text: nDel + " item" + (nDel > 1 ? "s" : "") + " passed to " + CLIENTCO + ". They get a page with only those questions after you submit; your signature covers the rest." }));
@@ -1437,7 +1437,7 @@ body.sn-review #snbar{margin:0}
   function jobParts(j) {
     var ul = el("ul", { "class": "snparts" });
     var rv = (P.reviews || []).filter(function (r) { return r.job === j.code && r.audience !== "justin"; })[0];
-    var rvOwner = role() === "owner" && (P.reviews || []).some(function (r) { return r.job === j.code; });
+    var rvOwner = role() === "owner"; /* P0.8.1: the owner can preview any job's review */
     ul.appendChild(item("Job overview", { sub: true, go: function () { openView("job", { job: j.code }); } }));
     if (rv) ul.appendChild(item("Review & approval", { sub: true, href: href("review", { job: j.code }), meta: rv.stageName || "" }));
     if (rvOwner) { ul.appendChild(item("Preview review as shop", { sub: true, href: href("review", { job: j.code, as: "shop" }) })); ul.appendChild(item("Preview review as client", { sub: true, href: href("review", { job: j.code, as: "client" }) })); }
@@ -1464,13 +1464,25 @@ body.sn-review #snbar{margin:0}
     // jobs
     drawer.appendChild(el("h4", { text: "Jobs" }));
     var ju = el("ul", { "class": "snjobs" }), js = P.jobs || [];
-    if (!js.length) ju.appendChild(el("li", { "class": "snnone", text: role() === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet." }));
+    if (!js.length && !(P.drafts || []).length) ju.appendChild(el("li", { "class": "snnone", text: role() === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet." }));
     js.forEach(function (j) {
       var open = openJob === j.code || (js.length === 1 && openJob === null);
       var b = el("button", { type: "button", "aria-expanded": String(open), onclick: function () { openJob = open ? "" : j.code; redraw(); } },
         [el("span", { text: (open ? "▾ " : "▸ ") + j.code }), el("span", { "class": "snmeta", text: j.title || "" })]);
       var li = el("li", {}, [b]); if (open) li.appendChild(jobParts(j)); ju.appendChild(li);
     });
+    if (role() === "owner" && (P.drafts || []).length) {
+      ju.appendChild(el("li", { "class": "snnone", text: "Published reviews, not in the portal yet (only you see these):" }));
+      (P.drafts || []).forEach(function (d) {
+        var open = openJob === "d:" + d.code;
+        var b = el("button", { type: "button", "aria-expanded": String(open), onclick: function () { openJob = open ? "" : "d:" + d.code; redraw(); } },
+          [el("span", { text: (open ? "▾ " : "▸ ") + d.code }), el("span", { "class": "snmeta", text: d.title || "" })]);
+        var li = el("li", {}, [b]);
+        if (open) { var pu = el("ul"); pu.appendChild(item("Preview review as shop", { sub: true, href: href("review", { job: d.code, as: "shop" }) })); pu.appendChild(item("Preview review as client", { sub: true, href: href("review", { job: d.code, as: "client" }) }));
+          pu.appendChild(item("Add as a portal job (not sent)", { sub: true, go: function () { openView("people", { job: d.code }); } })); li.appendChild(pu); }
+        ju.appendChild(li);
+      });
+    }
     drawer.appendChild(ju);
     // people
     if (role() === "owner" || role() === "manager") {

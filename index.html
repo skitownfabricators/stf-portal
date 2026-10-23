@@ -1059,6 +1059,18 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     // jobs
     p.appendChild(el("h3", { text: "Jobs" }));
     p.appendChild(el("p", { "class": "note", text: "Approval: press Send review to shop. When the shop manager signs, the portal moves it on by itself: to the client if they passed anything or the client must sign, otherwise it's approved and ready to ship. You only step in for changes." }));
+    if ((S.drafts || []).length) {
+      p.appendChild(el("p", { "class": "note", text: "Published reviews that aren't portal jobs yet. Only you can see them: preview them, or add one as a job (it stays unsent until you press Send to portal)." }));
+      var dl = el("ul", { "class": "rows", "data-tour": "drafts" });
+      S.drafts.forEach(function (d) {
+        var sh = el("select", { "aria-label": "Shop for " + d.code }, [opt("", "Shop…")].concat((S.shops || []).map(function (x) { return opt(x.id, x.name); })));
+        var pv = function (as) { return el("a", { href: "review.html?k=" + encodeURIComponent((window.STF_PORTAL || {}).token || "") + "&job=" + encodeURIComponent(d.code) + "&as=" + as, target: "_blank", rel: "noopener", "class": "btn", text: "Preview as " + as }); };
+        var li = el("li", { "data-job": d.code }, [el("div", { "class": "top" }, [el("span", { "class": "unsent", text: "NOT A JOB YET" }), el("b", { text: d.code }), el("span", { text: d.title || "" }), pv("shop"), pv("client"), sh,
+          btn("Add as job", function () { run("admin", ["addjob", { code: d.code, title: d.title || "", shop: sh.value, people: [] }]).then(function () { say(d.code + " added as a job (not sent). Nobody sees it until you press Send to portal.", "ok"); owner(); }, fail); })])]);
+        dl.appendChild(li);
+      });
+      p.appendChild(dl);
+    }
     var jf0 = jobForm(null); jf0.setAttribute("data-tour", "job-form"); p.appendChild(jf0);
     var jl = el("ul", { "class": "rows", "data-tour": "jobs" });
     if (!(S.jobs || []).length) jl.appendChild(el("li", {}, [el("span", { "class": "note", text: "No jobs yet." })]));
@@ -1132,16 +1144,17 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
       var stage = j.review || "", st = function (v, msg) { return function () { run("admin", ["stage", { code: j.code, stage: v }]).then(function () { say(msg, "ok"); owner(); }, fail); }; };
       var prev = function (as) { return el("a", { href: "review.html?k=" + encodeURIComponent((window.STF_PORTAL || {}).token || "") + "&job=" + encodeURIComponent(j.code) + "&as=" + as, target: "_blank", rel: "noopener", "class": "btn", text: "Preview as " + as }); };
       var rr = el("div", { "class": "top" }, [el("span", { "class": "tag", text: "Approval: " + ((S.stages || {})[stage] || "Review off") })]);
-      if (!stage) rr.appendChild(btn("Send review to shop", st("shop", "Review is with the shop manager now. It shows under Needs my attention in their menu."), true));
+      if (!stage && j.sent) rr.appendChild(btn("Send review to shop", st("shop", "Review is with the shop manager now. It shows under Needs my attention in their menu."), true));
       if (stage === "shop") rr.appendChild(btn("Skip to the client", st("client", "Review is with the client now. The shop's answers are locked.")));
       if (stage === "client") rr.appendChild(btn("Back to shop", st("shop", "Review is back with the shop.")));
       if (stage === "stf") { rr.appendChild(btn("Send back to shop", st("shop", "Back with the shop manager."), true)); rr.appendChild(btn("Send to client", st("client", "With the client now."))); rr.appendChild(btn("Mark ready to ship", st("done", "Marked approved and ready to ship."))); }
       if (stage === "done") rr.appendChild(btn("Reopen with the shop", st("shop", "Reopened with the shop manager.")));
-      if (stage) { rr.appendChild(btn("Close review", st("", "Review closed."))); rr.appendChild(prev("shop")); rr.appendChild(prev("client")); }
+      if (stage) rr.appendChild(btn("Close review", st("", "Review closed.")));
+      rr.appendChild(prev("shop")); rr.appendChild(prev("client"));
       var cs = el("input", { type: "checkbox", "aria-label": "Client must approve and sign" }); cs.checked = !!j.clientSign;
       cs.addEventListener("change", function () { run("admin", ["clientsign", { code: j.code, on: cs.checked }]).then(function () { say(cs.checked ? j.code + ": the client must approve and sign." : j.code + ": client signature is the shop manager's choice.", "ok"); owner(); }, fail); });
       var csl = el("label", { "class": "checks" }, [cs, document.createTextNode(" Client must approve and sign (STF requires it). Off = the shop manager's choice" + (j.shopClientSign ? "; the shop manager asked for it this round." : "."))]);
-      if (j.sent) { li.appendChild(rr); li.appendChild(csl); }
+      li.appendChild(rr); if (j.sent) li.appendChild(csl);
     };
     show(); return li;
   }
@@ -1379,7 +1392,7 @@ body.sn-review #snbar{margin:0}
   function jobParts(j) {
     var ul = el("ul", { "class": "snparts" });
     var rv = (P.reviews || []).filter(function (r) { return r.job === j.code && r.audience !== "justin"; })[0];
-    var rvOwner = role() === "owner" && (P.reviews || []).some(function (r) { return r.job === j.code; });
+    var rvOwner = role() === "owner"; /* P0.8.1: the owner can preview any job's review */
     ul.appendChild(item("Job overview", { sub: true, go: function () { openView("job", { job: j.code }); } }));
     if (rv) ul.appendChild(item("Review & approval", { sub: true, href: href("review", { job: j.code }), meta: rv.stageName || "" }));
     if (rvOwner) { ul.appendChild(item("Preview review as shop", { sub: true, href: href("review", { job: j.code, as: "shop" }) })); ul.appendChild(item("Preview review as client", { sub: true, href: href("review", { job: j.code, as: "client" }) })); }
@@ -1406,13 +1419,25 @@ body.sn-review #snbar{margin:0}
     // jobs
     drawer.appendChild(el("h4", { text: "Jobs" }));
     var ju = el("ul", { "class": "snjobs" }), js = P.jobs || [];
-    if (!js.length) ju.appendChild(el("li", { "class": "snnone", text: role() === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet." }));
+    if (!js.length && !(P.drafts || []).length) ju.appendChild(el("li", { "class": "snnone", text: role() === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet." }));
     js.forEach(function (j) {
       var open = openJob === j.code || (js.length === 1 && openJob === null);
       var b = el("button", { type: "button", "aria-expanded": String(open), onclick: function () { openJob = open ? "" : j.code; redraw(); } },
         [el("span", { text: (open ? "▾ " : "▸ ") + j.code }), el("span", { "class": "snmeta", text: j.title || "" })]);
       var li = el("li", {}, [b]); if (open) li.appendChild(jobParts(j)); ju.appendChild(li);
     });
+    if (role() === "owner" && (P.drafts || []).length) {
+      ju.appendChild(el("li", { "class": "snnone", text: "Published reviews, not in the portal yet (only you see these):" }));
+      (P.drafts || []).forEach(function (d) {
+        var open = openJob === "d:" + d.code;
+        var b = el("button", { type: "button", "aria-expanded": String(open), onclick: function () { openJob = open ? "" : "d:" + d.code; redraw(); } },
+          [el("span", { text: (open ? "▾ " : "▸ ") + d.code }), el("span", { "class": "snmeta", text: d.title || "" })]);
+        var li = el("li", {}, [b]);
+        if (open) { var pu = el("ul"); pu.appendChild(item("Preview review as shop", { sub: true, href: href("review", { job: d.code, as: "shop" }) })); pu.appendChild(item("Preview review as client", { sub: true, href: href("review", { job: d.code, as: "client" }) }));
+          pu.appendChild(item("Add as a portal job (not sent)", { sub: true, go: function () { openView("people", { job: d.code }); } })); li.appendChild(pu); }
+        ju.appendChild(li);
+      });
+    }
     drawer.appendChild(ju);
     // people
     if (role() === "owner" || role() === "manager") {
