@@ -1,5 +1,5 @@
 /**
- * STF Portal (Google Apps Script web app) - rev P0.7, Oct 22 2026. Owner: FAB - Apps.
+ * STF Portal (Google Apps Script web app) - rev P0.7.1, Oct 22 2026. Owner: FAB - Apps.
  *
  * P0.7: approve mode (Apps Spec P18). A job chat publishes review.json + images to Drive "STF Portal Reviews/<JOB CODE>/".
  *   Justin opens the review per job: off -> shop -> client. The review page (review.html, template A2.10) saves answers,
@@ -22,7 +22,7 @@
  * Nothing here shares a file or folder. Deploying the web app ("Anyone") is Justin's own action.
  */
 
-var REV = 'P0.7';
+var REV = 'P0.7.1';
 var POLL_MAX_OPS = 60;
 var FRONT_URL = 'https://skitownfabricators.github.io/stf-portal/';
 var ROLE_NAMES = { owner: 'Owner', manager: 'Shop manager', crew: 'Shop crew', client: 'Client' };
@@ -702,10 +702,15 @@ function reviewRow_(who, job, uid, kind, data, map) {
   pl.forEach(function (r) { L.push('Placement ' + (r.label || r.obj || '') + ': ' + [r.wIn, r.hIn].join(' x ') + ' in' + (r.changed ? ' (moved/resized)' : ' (as proposed)') + (r.cantMake && r.cantMake.length ? ' | CAN\'T MAKE: ' + r.cantMake.join(', ') : '')); });
   cm.forEach(function (c) { L.push('Comment [' + (c.slide || '') + ']: ' + c.text); });
   if (ap) {
-    L.push(ap.outcome === 'approve' ? 'OUTCOME: APPROVED as shown' : ap.outcome === 'change' ? 'OUTCOME: APPROVED WITH THIS CHANGE: ' + ap.change : 'OUTCOME: NOT READY, needs changes: ' + ap.change);
+    var OL = { approve: 'OUTCOME: APPROVED as shown', change: 'OUTCOME: APPROVED WITH THIS CHANGE: ', notready: 'OUTCOME: NOT READY, needs changes: ',
+      toclient: 'OUTCOME: SHOP APPROVED, send the rest to the client', stf_then_shop: 'OUTCOME: SHOP WANTS CHANGES, then back to the shop before the client: ',
+      stf_then_client: 'OUTCOME: SHOP APPROVED WITH CHANGES, then send the rest to the client: ' };
+    L.push((OL[ap.outcome] || ('OUTCOME: ' + ap.outcome + ': ')) + (ap.outcome === 'approve' || ap.outcome === 'toclient' ? '' : (ap.change || '')));
     if (ap.note) L.push('Note for the record: ' + ap.note);
     if (ap.signed) L.push('Signed: ' + (ap.signer && ap.signer.name ? ap.signer.name + ', ' : '') + (ap.signer ? ap.signer.company + ' (' + ap.signer.role + ')' : '') + ', ' + new Date(ap.at).toISOString() + ', via STF portal, ' + (ap.rev || '') + ' (signature saved in the portal: ' + pre + 'approvals/)');
   }
-  var title = ap ? (ap.outcome === 'notready' ? 'Review: NOT READY' : 'Review: APPROVED' + (ap.outcome === 'change' ? ' with a change' : '')) : 'Review answers';
+  var TT = { approve: 'Review: APPROVED', change: 'Review: APPROVED with a change', notready: 'Review: NOT READY', toclient: 'Review: APPROVED, send the rest to the client',
+    stf_then_shop: 'Review: CHANGES FIRST, then back to the shop', stf_then_client: 'Review: APPROVED with changes, then the client' };
+  var title = ap ? (TT[ap.outcome] || 'Review: ' + ap.outcome) : 'Review answers';
   sheet_('submissions').appendRow([new Date().toISOString(), 'review', job, title + ' (' + (aud || who.role) + ')', who.name || '', ROLE_NAMES[who.role] || who.role, L.join('\n').slice(0, 45000), pre + 'submissions/']);
 }

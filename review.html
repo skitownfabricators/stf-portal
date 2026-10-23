@@ -808,7 +808,7 @@ const REVIEW = window.STF_REVIEW;
     const opts = el("div", { class: "opts" + (wait ? " waiting" : ""), role: "radiogroup", "aria-label": d.title });
     d.options.forEach(o => opts.append(el("button", { type: "button", class: "opt", role: "radio", "aria-checked": String(pick === o.id),
       onclick: () => { state.picks[id] = pick === o.id && !mine ? null : o.id; if (state.picks[id] === null) delete state.picks[id]; keepDraft(); render(); } },
-      el("span", { class: "dot", "aria-hidden": "true" }), el("span", {}, o.label, o.rec ? el("span", { class: "rec", text: "Recommended" }) : null))));
+      el("span", { class: "dot", "aria-hidden": "true" }), el("span", {}, herePage(o.label, state.i), o.rec ? el("span", { class: "rec", text: "Recommended" }) : null))));
     const ta = el("textarea", { id: (idp || "note-") + id, placeholder: needsNote(pick) ? "Note (required for this choice)" : "Note (optional)" });
     ta.value = note; ta.addEventListener("input", () => { state.notes[id] = ta.value; keepDraft(); tally(); submitBar(); });
     const msg = el("span", { class: "savemsg" + (saved.at && !changed ? " ok" : "") });
@@ -1033,14 +1033,14 @@ const REVIEW = window.STF_REVIEW;
     const copy = el("button", { type: "button", class: "navbtn", text: "Copy decisions as text", onclick: async () => {
       try { await navigator.clipboard.writeText(asText()); copy.textContent = "Copied"; }
       catch (e) { const pre = el("textarea", { id: "copyFallback" }); pre.value = asText(); bar.append(pre); pre.select(); } } });
-    if (state.submitted && state.submitted.ext) { st.textContent = "Submitted " + fmt(state.submitted.at) + ". Saved in the portal: Ski Town Fabricators has your answers" + (AUD === "shop" ? ". Anything you passed to the client goes to them next." : "."); st.classList.add("ok"); }
+    if (state.submitted && state.submitted.ext) { st.textContent = "Submitted " + fmt(state.submitted.at) + ". Saved in the portal: Ski Town Fabricators has your answers" + (AUD === "shop" ? (sigOutcome() === "stf_then_shop" ? ". We will make the changes and bring it back to you before the client sees anything." : sigOutcome() === "stf_then_client" ? ". We will make the changes, then send the rest to the client." : nDelegated() ? ". Anything you passed to the client goes to them next." : ".") : "."); st.classList.add("ok"); }
     else if (state.submitted) {
       st.textContent = state.submitted.rang ? "Submitted " + fmt(state.submitted.at) + ". Your answers are filed for this chat. Go back to HQ - Fabrication and say done." : "Submitted and saved " + fmt(state.submitted.at) + " (the note couldn't be filed: " + (state.submitted.why || "no reason given") + "). Go back to HQ - Fabrication and say done; HQ will send you here.";
       st.classList.add(state.submitted.rang ? "ok" : "err");
     } else if (allSaved) { st.textContent = "Submitted earlier. Change a choice to resubmit."; st.classList.add("ok"); }
     else st.textContent = n + " of " + decisionIds.length + " decisions ready" + (state.comments.length ? " · " + state.comments.length + " comment(s) included" : "");
     const onApproval = !!(pages[state.i] && pages[state.i].approval);
-    if (SIGNER) { if (!approvalReady()) btn.disabled = true; if (!state.readOnly && !state.extShown) btn.textContent = sigOutcome() === "notready" ? "Send my answers" : "Sign and submit";
+    if (SIGNER) { if (!approvalReady()) btn.disabled = true; if (!state.readOnly && !state.extShown) btn.textContent = noSig() ? "Send my answers" : "Sign and submit";
       if (!onApproval) { const left = decisionIds.length - n; const goBtn = el("button", { type: "button", class: "save", text: left ? left + " left to answer · then sign on the last page" : "Go to " + pages[pages.length - 1].title + " →", onclick: () => go(pages.length - 1) });
         bar.replaceChildren(el("div", { class: "saverow" }, goBtn, el("span", { class: "savemsg", id: "submitMsg", text: n + " of " + decisionIds.length + " answered" })), copy); return; } }
     if (EXT && state.extShown) { btn.textContent = "Update my answers";
@@ -1095,36 +1095,47 @@ const REVIEW = window.STF_REVIEW;
       : "Turn on comments (the speech-bubble icon at the top of the page), tap the box above, " + (copied ? "paste (required: the text is copied)" : "copy the text above and paste it") + " and press send. Once it's posted, Ski Town Fabricators has it.";
   }
   /* ===== A2.8 Final approval block: checkboxes + ONE signature per company (Justin, Oct 21). Outcomes: approve / approve with one change / not ready. ===== */
-  const sigOutcome = () => state.sig.outcome || "approve";
+  /* A2.11: a shop that passed items to the client picks the route; checks only for plain approvals; changes need text. */
+  const nDelegated = () => AUD === "shop" ? decisionIds.filter(id => pickOf(id) === "delegate").length : 0;
+  const OUTCOMES = () => nDelegated()
+    ? [["toclient", "My answers are final. Send the rest to " + CLIENTCO], ["stf_then_shop", "Changes first (write them below), then back to me before " + CLIENTCO + " (no signature yet)"], ["stf_then_client", "Changes first (write them below), then send the rest to " + CLIENTCO]]
+    : [["approve", "Approve as shown"], ["change", "Approve with one change (write it below)"], ["notready", "Not ready yet, needs changes (no signature)"]];
+  const sigOutcome = () => { const ok = OUTCOMES().map(x => x[0]); return ok.indexOf(state.sig.outcome) >= 0 ? state.sig.outcome : ok[0]; };
+  const noSig = (o) => { o = o || sigOutcome(); return o === "notready" || o === "stf_then_shop"; };
+  const needChecks = (o) => { o = o || sigOutcome(); return o === "approve" || o === "toclient"; };
   const sigSigned = () => !!(state.sig.strokes && state.sig.strokes.length);
   const checksDone = () => CHECKS.every((c, k) => state.sig.checks[k]);
-  function approvalReady() { const o = sigOutcome();
-    if (o === "notready") return !!(state.sig.change || "").trim();
-    if (o === "change" && !(state.sig.change || "").trim()) return false;
-    return checksDone() && sigSigned(); }
-  function approvalWhy() { const o = sigOutcome();
-    if (o === "notready") return "Tell us what needs to change before you send.";
-    if (o === "change" && !(state.sig.change || "").trim()) return "Write the change you want.";
-    if (!checksDone()) return "Tick every box in the approval section.";
+  function approvalReady() { const o = sigOutcome(), txt = !!(state.sig.change || "").trim();
+    if (noSig(o)) return txt;
+    if (!needChecks(o) && !txt) return false;
+    return (!needChecks(o) || checksDone()) && sigSigned(); }
+  function approvalWhy() { const o = sigOutcome(), txt = !!(state.sig.change || "").trim();
+    if (noSig(o)) return "Tell us what needs to change before you send.";
+    if (!needChecks(o) && !txt) return o === "change" ? "Write the change you want." : "Write the changes you want.";
+    if (needChecks(o) && !checksDone()) return "Tick every box in the approval section.";
     return "Sign in the box above your name."; }
+  const OUTCOME_LINE = { approve: "OUTCOME: APPROVED as shown", change: "OUTCOME: APPROVED WITH THIS CHANGE: ", notready: "OUTCOME: NOT READY, needs changes: ",
+    toclient: "OUTCOME: SHOP APPROVED, send the rest to the client", stf_then_shop: "OUTCOME: SHOP WANTS CHANGES, then back to the shop before the client: ", stf_then_client: "OUTCOME: SHOP APPROVED WITH CHANGES, then send the rest to the client: " };
   function approvalLines() { if (!SIGNER) return [];
     const o = sigOutcome(), who = (SIGNER.name ? SIGNER.name + ", " : "") + SIGNER.company + " (" + SIGNER.role + ")";
-    const L = [o === "approve" ? "OUTCOME: APPROVED as shown" : o === "change" ? "OUTCOME: APPROVED WITH THIS CHANGE: " + clip(state.sig.change, 400) : "OUTCOME: NOT READY, needs changes: " + clip(state.sig.change, 400)];
-    if ((state.sig.note || "").trim() && o !== "notready") L.push("Note for the record: " + clip(state.sig.note, 400));
-    if (o !== "notready" && sigSigned()) L.push("Signed: " + who + ", " + new Date(state.sig.at || Date.now()).toLocaleString() + ", via STF portal, " + (REVIEW.rev || "") + (state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ" ? " (TEST)" : ""));
+    const L = [OUTCOME_LINE[o] + (o === "approve" || o === "toclient" ? "" : clip(state.sig.change, 400))];
+    if ((state.sig.note || "").trim() && !noSig(o)) L.push("Note for the record: " + clip(state.sig.note, 400));
+    if (!noSig(o) && sigSigned()) L.push("Signed: " + who + ", " + new Date(state.sig.at || Date.now()).toLocaleString() + ", via STF portal, " + (REVIEW.rev || "") + (state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ" ? " (TEST)" : ""));
     return L; }
   function approvalRecord(at) { if (!SIGNER) return null; const o = sigOutcome();
     return { review: REVIEW.id, audience: AUD, rev: REVIEW.rev || "", outcome: o, change: (state.sig.change || "").trim(), note: (state.sig.note || "").trim(), checks: CHECKS.map((c, k) => ({ text: c, checked: !!state.sig.checks[k] })),
-      signer: { name: SIGNER.name, company: SIGNER.company, role: SIGNER.role }, signed: o !== "notready" && sigSigned(), strokes: o !== "notready" ? (state.sig.strokes || []) : [], png: o !== "notready" ? (state.sig.png || "") : "", by: state.me || "", test: state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ", at }; }
+      signer: { name: SIGNER.name, company: SIGNER.company, role: SIGNER.role }, signed: !noSig(o) && sigSigned(), strokes: !noSig(o) ? (state.sig.strokes || []) : [], png: !noSig(o) ? (state.sig.png || "") : "", by: state.me || "", test: state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ", at }; }
   /* Signature as text for the comment channel: strokes on a 1000 x 333 grid, thinned, "x,y x,y|x,y" per stroke. The chat redraws it on the approval PDF. */
-  function sigComment() { if (!SIGNER || sigOutcome() === "notready" || !sigSigned()) return "";
+  function sigComment() { if (!SIGNER || noSig() || !sigSigned()) return "";
     const thin = st => { const out = []; st.forEach(p => { const q = out[out.length - 1]; if (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) >= 6) out.push(p); }); if (out.length === 1 && st.length > 1) out.push(st[st.length - 1]); return out; };
     const body = state.sig.strokes.map(st => thin(st).map(p => p[0] + "," + p[1]).join(" ")).join("|");
     return ("SIGNATURE for " + REVIEW.id + " · " + (SIGNER.name ? SIGNER.name + ", " : "") + SIGNER.company + " (" + SIGNER.role + ") · " + new Date(state.sig.at || Date.now()).toISOString() + " · grid 1000x333 · " + body).slice(0, 4000); }
+  /* A2.11: an option that names the page it's shown on ("the size I set on page 2") reads "on this page". */
+  const herePage = (label, slideIdx) => String(label).replace(new RegExp("\\bon page " + slideIdx + "\\b", "i"), "on this page");
   function approvalPage(p) {
     const panel = el("div", { class: "panel" });
     panel.append(el("div", { class: "card" }, el("div", { class: "slidehead" }, el("span", { class: "status " + slideStatus(p), text: slideStatus(p) === "need" ? "Needs your signature" : "Signed" }), el("span", { class: "eyebrow", text: "Last page" })),
-      el("h2", { text: p.title }), el("p", { class: "lede", text: "Everything you answered is listed below. Tick the boxes, sign, then press " + (sigOutcome() === "notready" ? "Send my answers" : "Sign and submit") + " at the bottom." })));
+      el("h2", { text: p.title }), el("p", { class: "lede", text: "Everything you answered is listed below. " + (nDelegated() ? "Choose what happens next, " : "") + (needChecks() ? "tick the boxes, sign, " : noSig() ? "write what needs to change, " : "write the changes, sign, ") + "then press " + (noSig() ? "Send my answers" : "Sign and submit") + " at the bottom." })));
     const ul = el("ul", { class: "bul" }); decisionIds.forEach(id => { const o = D[id].options.find(x => x.id === pickOf(id)); ul.append(el("li", {}, el("b", { text: D[id].title + ": " }), o ? clip(o.label, 120) : "(no answer yet)", noteOf(id).trim() ? " · " + clip(noteOf(id), 160) : "")); });
     const nDel = decisionIds.filter(id => pickOf(id) === "delegate").length;
     if (nDel) ul.append(el("li", { text: nDel + " item" + (nDel > 1 ? "s" : "") + " passed to " + CLIENTCO + ". Ski Town Fabricators sends them a page with only those questions after you submit; your signature covers the rest." }));
@@ -1133,30 +1144,32 @@ const REVIEW = window.STF_REVIEW;
     panel.append(commentBox(state.i + ". " + p.title));
     return el("section", { class: "stage", style: "grid-template-columns:1fr" }, panel);
   }
-  const apMsgText = () => approvalReady() ? (sigOutcome() === "notready" ? "Press Send my answers below." : "Signed. Press Sign and submit below.") : approvalWhy();
+  const apMsgText = () => approvalReady() ? (noSig() ? "Press Send my answers below." : "Signed. Press Sign and submit below.") : approvalWhy();
   const apMsgRefresh = () => { const m = document.getElementById("apMsg"); if (m) { m.textContent = apMsgText(); m.className = "savemsg" + (approvalReady() ? " ok" : ""); } };
   function approvalBlock() {
-    const o = sigOutcome(); const notready = o === "notready";
+    const o = sigOutcome(); const notready = noSig(o);
     const box = el("section", { class: "approval" + (notready ? " locked" : ""), "aria-label": "Final approval" });
     box.append(el("h3", { text: AUD === "shop" ? "Shop approval" : "Your approval" }),
-      el("p", { class: "why", style: "margin:0", text: "Tick each box and sign above your name. Every answer above is included. " + (AUD === "client" ? "If something isn't right, choose one of the other two options." : "") }));
+      el("p", { class: "why", style: "margin:0", text: (nDelegated() ? "You passed " + nDelegated() + " item" + (nDelegated() > 1 ? "s" : "") + " to " + CLIENTCO + ". Choose what happens next: send them on now, or have us make changes first. " : "")
+        + (needChecks(o) ? "Tick each box and sign above your name. " : notready ? "Write what needs to change; no signature yet. " : "Write the changes and sign; the boxes are optional. ") + "Every answer above is included. "
+        + (AUD === "client" && needChecks(o) ? "If something isn't right, choose one of the other two options." : "") }));
     const ul = el("ul", { class: "checks" });
     ul.append(el("li", { class: "auto" }, el("input", { type: "checkbox", disabled: "", checked: decisionIds.every(ready) ? "" : null }), el("span", { text: "Every question on this page is answered (" + decisionIds.filter(ready).length + " of " + decisionIds.length + ")." })));
-    CHECKS.forEach((c, k) => { const cb = el("input", { type: "checkbox", id: "chk-" + k }); cb.checked = !!state.sig.checks[k]; cb.disabled = notready;
+    CHECKS.forEach((c, k) => { const cb = el("input", { type: "checkbox", id: "chk-" + k }); cb.checked = !!state.sig.checks[k]; cb.disabled = notready || !needChecks(o);
       cb.addEventListener("change", () => { state.sig.checks[k] = cb.checked; keepDraft(); tally(); submitBar(); apMsgRefresh(); });
       ul.append(el("li", {}, cb, el("label", { for: "chk-" + k, text: c }))); });
     box.append(ul);
     const oc = el("div", { class: "outcome", role: "radiogroup", "aria-label": "Outcome" });
-    [["approve", "Approve as shown"], ["change", "Approve with one change (write it below)"], ["notready", "Not ready yet, needs changes (no signature)"]].forEach(([v, lab]) =>
+    OUTCOMES().forEach(([v, lab]) =>
       oc.append(el("button", { type: "button", class: "opt", role: "radio", "aria-checked": String(o === v), onclick: () => { state.sig.outcome = v; keepDraft(); render(); } }, el("span", { class: "dot", "aria-hidden": "true" }), el("span", { text: lab }))));
     box.append(oc);
-    if (o !== "approve") { const ch = el("textarea", { id: "sig-change", placeholder: o === "change" ? "The one change you want (small changes only; we issue the next rev with it and your signature carries over)" : "What needs to change before you can approve" });
+    if (!needChecks(o)) { const ch = el("textarea", { id: "sig-change", placeholder: o === "change" ? "The one change you want (small changes only; we issue the next rev with it and your signature carries over)" : o === "stf_then_shop" ? "What we should change before you look at it again" : o === "stf_then_client" ? "The changes we should make before " + CLIENTCO + " gets their page" : "What needs to change before you can approve" });
       ch.value = state.sig.change || ""; ch.addEventListener("input", () => { state.sig.change = ch.value; keepDraft(); tally(); submitBar(); }); box.append(ch); }
     if (!notready) { const nt = el("textarea", { id: "sig-note", placeholder: "Note for the record (doesn't change the package): delivery timing, who to call, site access…", style: "min-height:48px" });
       nt.value = state.sig.note || ""; nt.addEventListener("input", () => { state.sig.note = nt.value; keepDraft(); }); box.append(nt); }
     const pad = el("div", { class: "sigpad" + (sigSigned() ? " signed" : "") }); const cv = el("canvas", { "aria-label": "Sign here" }); pad.append(cv, el("div", { class: "sigline" }), el("div", { class: "sighint", text: "Sign here (finger or mouse)" }));
     box.append(pad, el("p", { class: "signame", text: (SIGNER.name ? SIGNER.name + ", " : "") + SIGNER.company + " (" + SIGNER.role + ")" }),
-      el("p", { class: "sigmeta", text: "I approve " + (REVIEW.job || REVIEW.title) + (REVIEW.rev ? " " + REVIEW.rev : "") + " as shown" + (o === "change" ? ", with the change above" : "") + ". " + new Date(state.sig.at || Date.now()).toLocaleString() + " · via STF portal" }),
+      el("p", { class: "sigmeta", text: "I approve " + (REVIEW.job || REVIEW.title) + (REVIEW.rev ? " " + REVIEW.rev : "") + (o === "toclient" ? ": my answers above; the items I passed go to " + CLIENTCO : o === "stf_then_client" ? " with the changes above; the items I passed go to " + CLIENTCO + " after them" : " as shown" + (o === "change" ? ", with the change above" : "")) + ". " + new Date(state.sig.at || Date.now()).toLocaleString() + " · via STF portal" }),
       el("div", { class: "saverow" }, el("button", { type: "button", class: "navbtn small", text: "Clear signature", onclick: () => { state.sig.strokes = []; state.sig.png = ""; state.sig.at = 0; keepDraft(); render(); } }),
         el("span", { class: "savemsg", id: "apMsg", text: apMsgText() })));
     requestAnimationFrame(() => sigPad(cv, pad));
