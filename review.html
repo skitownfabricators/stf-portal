@@ -424,13 +424,13 @@ nav.rail { margin-top: 22px; display: flex; gap: 10px; align-items: center; flex
 #stfbar{font:13px system-ui,-apple-system,Segoe UI,sans-serif;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:8px 16px;background:#16181d;color:#fff}
 #stfbar a{color:#fff}
 #stfbar .pv{background:#c0392b;color:#fff;border-radius:4px;padding:2px 8px;font-weight:600}
-#stfload{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(245,246,248,.97);font:15px system-ui,-apple-system,Segoe UI,sans-serif;color:#16181d}
+#stfload{position:fixed;inset:0;z-index:790;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(245,246,248,.97);font:15px system-ui,-apple-system,Segoe UI,sans-serif;color:#16181d}
 #stfload .card{max-width:440px;width:100%;background:#fff;border:1px solid #d6d9de;border-radius:12px;padding:22px;display:grid;gap:12px}
 #stfload a.btn{display:block;text-align:center;padding:11px;border-radius:8px;background:#16181d;color:#fff;text-decoration:none;font-weight:600}
 @media (prefers-color-scheme: dark){#stfload{background:rgba(18,20,24,.97);color:#e8eaed}#stfload .card{background:#1d2026;border-color:#33373f}}
 </style>
 <script>
-/* STF Portal review loader (rev P0.7): picks the job, loads its review + images from the portal, then runs the template engine. */
+/* STF Portal review loader (rev P0.8): picks the job, loads its review + images from the portal, then runs the template engine. */
 (function () {
   var P = window.STF_PORTAL || {}, q = new URLSearchParams(location.search);
   var link = function (extra) { var u = new URLSearchParams(); if (P.token) u.set("k", P.token); for (var k in extra) u.set(k, extra[k]); return "?" + u.toString(); };
@@ -468,7 +468,7 @@ nav.rail { margin-top: 22px; display: flex; gap: 10px; align-items: center; flex
     }
     var as = P.owner ? (q.get("as") || "shop") : "";
     return window.claude.portal.call("review", ["get", { job: job, as: as }]).then(function (r) {
-      P.reviewJob = job; if (r.preview) window.STF_PREVIEW = true;
+      P.reviewJob = job; if (r.preview) window.STF_PREVIEW = true; if (r.locked) { window.STF_LOCKED = true; window.STF_LOCKED_STAGE = r.stageName || ""; }
       var names = r.images || [], urls = {};
       card("SKI TOWN FABRICATORS", ["Loading pictures (" + names.length + ")…"]);
       return Promise.all(names.map(function (n) { return window.claude.portal.call("review", ["img", { job: job, name: n, as: as }]).then(function (u) { urls[n] = u; }, function () {}); })).then(function () {
@@ -481,8 +481,11 @@ nav.rail { margin-top: 22px; display: flex; gap: 10px; align-items: center; flex
         window.STF_REVIEW = walk(r.review);
         try { var h1 = document.getElementById("deckTitle"); if (h1 && r.review.title) h1.textContent = r.review.title; document.title = (r.review.title || "Review") + " · Ski Town Fabricators"; } catch (e) {}
         var eng = document.getElementById("stfengine"), s = document.createElement("script");
-        s.textContent = eng.textContent; done(); bar(job, (list.filter(function (x) { return x.job === job; })[0] || {}).title || "", r.preview, as);
+        s.textContent = eng.textContent; done();
+        if (window.STFNav) window.STFNav.context({ preview: r.preview, as: as, locked: r.locked, stageName: r.stageName });
+        else bar(job, (list.filter(function (x) { return x.job === job; })[0] || {}).title || "", r.preview, as);
         document.body.appendChild(s);
+        if (window.STFNav) window.STFNav.reviewReady();
       });
     }, function (e) {
       var m = (e && e.message) || "";
@@ -516,6 +519,20 @@ const REVIEW = window.STF_REVIEW;
       if (AUD === "client") { if (a && !a.delegated) { shopDecided[id] = a; delete D[id]; return; } if (!a || !a.delegated) { delete D[id]; return; } }
       else if (!ow.includes(AUD) || (D[id].after && D[id].after.length)) delete D[id]; });
     S.forEach(s => { if (s.decisions) s.decisions = s.decisions.filter(id => D[id]); }); }
+  /* A2.12: the client starts from the shop's size, position and color; options that need a picture the client can't move change. */
+  const SHOPCO = (REVIEW.parties && REVIEW.parties.shop && REVIEW.parties.shop.company) || "the shop";
+  if (AUD === "client") {
+    const SP = REVIEW.shopPlacements || [];
+    S.forEach(sl => { (sl.figures || []).forEach(f => { if (f.kind !== "place") return; (f.objects || []).forEach(o => {
+      const r = SP.find(x => x.fig === (f.id || f.src) && x.obj === o.id); if (!r || !r.changed) return;
+      if (r.wIn > 0) { o.hIn = o.hIn * r.wIn / o.wIn; o.wIn = r.wIn; } if (r.xIn != null) o.xIn = r.xIn; if (r.yIn != null) o.yIn = r.yIn;
+      if (r.color && o.colors) { const k = o.colors.findIndex(c => c.name === r.color); if (k > 0) o.colors.unshift(o.colors.splice(k, 1)[0]); if (o.colors[0] && o.colors[0].src) o.src = o.colors[0].src; }
+      o.shopSet = true; }); }); });
+    S.forEach(sl => { const fixed = (sl.figures || []).filter(f => f.kind === "place" && !(f.interactiveFor || []).includes("client")); if (!fixed.length || !sl.decisions) return;
+      const shopMoved = fixed.some(f => (f.objects || []).some(o => o.shopSet));
+      sl.decisions.forEach(id => { const d = D[id]; if (!d) return;
+        d.options = d.options.filter(o => { if (!(o.needsPlace || o.id === "custom")) return true; if (!shopMoved) return false; o.label = "Keep the size shown (set by " + SHOPCO + ")"; o.rec = false; return true; }); }); });
+  }
   /* Guard: drop slide references to undefined decisions; collect decisions not attached to any slide on a final "Your decisions" slide. */
   S.forEach(s => { if (s.decisions) { const bad = s.decisions.filter(id => !D[id]); if (bad.length) { console.warn("STF review: slide '" + s.id + "' lists undefined decision(s): " + bad.join(", ")); s.decisions = s.decisions.filter(id => D[id]); } } });
   const attached = new Set(S.flatMap(s => s.decisions || []));
@@ -527,7 +544,7 @@ const REVIEW = window.STF_REVIEW;
   const pages = [{ id: "cover", kind: "info", title: "Overview" }].concat(S);
   /* A2.8: the approval (checks + signature) is its own LAST page, after every option and decision has been shown. */
   const SIGNER0 = (REVIEW.signers || []).find(x => x.audience === (REVIEW.audience || "justin")) || null;
-  if (SIGNER0) pages.push({ id: "approval", kind: "need", title: (REVIEW.audience === "shop" ? "Shop approval" : "Your approval"), approval: true });
+  if (SIGNER0) pages.push({ id: "approval", kind: "need", title: (REVIEW.audience === "shop" ? "Shop approval" : (REVIEW.audience === "client" && REVIEW.clientSignRequired === false) ? "Send your answers" : "Your approval"), approval: true });
   try { const h = location.hash.replace("#", ""); const k = pages.map(p => p.id).indexOf(h); if (k >= 0) state.i = k; } catch (e) {}
   const el = (t, a = {}, ...kids) => { const n = document.createElement(t);
     for (const [k, v] of Object.entries(a)) { if (v == null) continue; if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v); }
@@ -594,7 +611,7 @@ const REVIEW = window.STF_REVIEW;
     if (SIGNER) { const ap = pages[pages.length - 1]; const st = slideStatus(ap);
       tr.append(el("button", { type: "button", onclick: () => go(pages.length - 1) }, el("span", {}, (pages.length - 1) + ". " + ap.title), el("span", { class: "status " + (st === "need" ? "need" : "done"), text: st === "need" ? "Sign at the end" : "Signed" }))); }
     const right = el("div", { class: "card" }, el("p", { class: "label", text: "In this review" }), tr);
-    if (state.readOnly) right.append(el("p", { class: "ro", text: "Submitting isn't available in this view. Use Copy decisions as text and paste them in the chat." }));
+    if (state.readOnly) right.append(el("p", { class: "ro", text: window.STF_LOCKED ? "This review has moved on (" + (window.STF_LOCKED_STAGE || "") + "), so answers can't be changed here. What you sent is saved." : window.STF_PREVIEW ? "Preview: nothing is saved." : "Submitting isn't available in this view. Use Copy decisions as text and paste them in the chat." }));
     const rt = el("ul", { class: "routing" });
     const groups = {}; decisionIds.forEach(id => { const g = afterOf(id).length ? "wait" : key(ownersOf(id)); (groups[g] = groups[g] || []).push(id); });
     Object.keys(groups).sort((a, b) => (a === "wait") - (b === "wait")).forEach(g => { const ids = groups[g];
@@ -679,9 +696,9 @@ const REVIEW = window.STF_REVIEW;
     }
     return box;
   }
-  const DRAFT_KEY = "stf-review-draft-" + REVIEW.id;
-  try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); Object.assign(state.picks, d.picks || {}); Object.assign(state.notes, d.notes || {}); Object.assign(state.owners, d.owners || {}); Object.assign(state.after, d.after || {}); Object.assign(state.place, d.place || {}); Object.assign(state.ifor, d.ifor || {}); Object.assign(state.scale, d.scale || {}); state.comments = Array.isArray(d.comments) ? d.comments : []; state.sig = Object.assign({ checks: {}, strokes: [], outcome: "approve", change: "", note: "", png: "", at: 0 }, d.sig || {}); } catch (e) { state.sig = { checks: {}, strokes: [], outcome: "approve", change: "", note: "", png: "", at: 0 }; }
-  function keepDraft() { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ picks: state.picks, notes: state.notes, owners: state.owners, after: state.after, place: state.place, ifor: state.ifor, scale: state.scale, comments: state.comments, sig: state.sig, extStep: state.extStep || 0 })); } catch (e) {} }
+  const DRAFT_KEY = "stf-review-draft-" + REVIEW.id + "-" + AUD + (REVIEW.viewer ? "-" + REVIEW.viewer : ""); /* A2.12: one draft per person and audience */
+  try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); Object.assign(state.picks, d.picks || {}); Object.assign(state.notes, d.notes || {}); Object.assign(state.owners, d.owners || {}); Object.assign(state.after, d.after || {}); Object.assign(state.place, d.place || {}); Object.assign(state.ifor, d.ifor || {}); Object.assign(state.scale, d.scale || {}); state.comments = Array.isArray(d.comments) ? d.comments : []; state.sig = Object.assign({ checks: {}, strokes: [], outcome: "approve", change: "", note: "", png: "", at: 0 }, d.sig || {}, { checks: {}, strokes: [], png: "", at: 0 }); /* A2.12: boxes and signature are never restored */ } catch (e) { state.sig = { checks: {}, strokes: [], outcome: "approve", change: "", note: "", png: "", at: 0 }; }
+  function keepDraft() { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ picks: state.picks, notes: state.notes, owners: state.owners, after: state.after, place: state.place, ifor: state.ifor, scale: state.scale, comments: state.comments, sig: Object.assign({}, state.sig, { strokes: [], png: "", checks: {}, at: 0 }), extStep: state.extStep || 0 })); } catch (e) {} }
   const pickOf = id => state.picks[id] !== undefined ? state.picks[id] : ((state.saved[id] || {}).choice || null);
   const noteOf = id => state.notes[id] !== undefined ? state.notes[id] : ((state.saved[id] || {}).note || "");
   const needsNote = c => c === "changes" || c === "reject" || c === "notyet";
@@ -1033,7 +1050,7 @@ const REVIEW = window.STF_REVIEW;
     const copy = el("button", { type: "button", class: "navbtn", text: "Copy decisions as text", onclick: async () => {
       try { await navigator.clipboard.writeText(asText()); copy.textContent = "Copied"; }
       catch (e) { const pre = el("textarea", { id: "copyFallback" }); pre.value = asText(); bar.append(pre); pre.select(); } } });
-    if (state.submitted && state.submitted.ext) { st.textContent = "Submitted " + fmt(state.submitted.at) + ". Saved in the portal: Ski Town Fabricators has your answers" + (AUD === "shop" ? (sigOutcome() === "stf_then_shop" ? ". We will make the changes and bring it back to you before the client sees anything." : sigOutcome() === "stf_then_client" ? ". We will make the changes, then send the rest to the client." : nDelegated() ? ". Anything you passed to the client goes to them next." : ".") : "."); st.classList.add("ok"); }
+    if (state.submitted && state.submitted.ext) { st.textContent = "Submitted " + fmt(state.submitted.at) + ". Saved in the portal. " + (nextLine() || "Ski Town Fabricators has your answers."); st.classList.add("ok"); }
     else if (state.submitted) {
       st.textContent = state.submitted.rang ? "Submitted " + fmt(state.submitted.at) + ". Your answers are filed for this chat. Go back to HQ - Fabrication and say done." : "Submitted and saved " + fmt(state.submitted.at) + " (the note couldn't be filed: " + (state.submitted.why || "no reason given") + "). Go back to HQ - Fabrication and say done; HQ will send you here.";
       st.classList.add(state.submitted.rang ? "ok" : "err");
@@ -1097,34 +1114,49 @@ const REVIEW = window.STF_REVIEW;
   /* ===== A2.8 Final approval block: checkboxes + ONE signature per company (Justin, Oct 21). Outcomes: approve / approve with one change / not ready. ===== */
   /* A2.11: a shop that passed items to the client picks the route; checks only for plain approvals; changes need text. */
   const nDelegated = () => AUD === "shop" ? decisionIds.filter(id => pickOf(id) === "delegate").length : 0;
-  const OUTCOMES = () => nDelegated()
+  const CLIENT_NOSIGN = AUD === "client" && REVIEW.clientSignRequired === false;
+  const PORTAL = REVIEW.stage !== undefined;
+  const clientSignOn = () => AUD === "shop" && (!!REVIEW.stfRequiresClientSign || !!state.sig.clientSign);
+  const OUTCOMES = () => CLIENT_NOSIGN ? [["answers", "My answers are final"], ["question", "I have a question or want a change (write it below)"]] : nDelegated()
     ? [["toclient", "My answers are final. Send the rest to " + CLIENTCO], ["stf_then_shop", "Changes first (write them below), then back to me before " + CLIENTCO + " (no signature yet)"], ["stf_then_client", "Changes first (write them below), then send the rest to " + CLIENTCO]]
     : [["approve", "Approve as shown"], ["change", "Approve with one change (write it below)"], ["notready", "Not ready yet, needs changes (no signature)"]];
   const sigOutcome = () => { const ok = OUTCOMES().map(x => x[0]); return ok.indexOf(state.sig.outcome) >= 0 ? state.sig.outcome : ok[0]; };
-  const noSig = (o) => { o = o || sigOutcome(); return o === "notready" || o === "stf_then_shop"; };
+  const noSig = (o) => { o = o || sigOutcome(); return CLIENT_NOSIGN || o === "notready" || o === "stf_then_shop"; };
+  const needText = (o) => { o = o || sigOutcome(); return !(o === "approve" || o === "toclient" || o === "answers"); };
   const needChecks = (o) => { o = o || sigOutcome(); return o === "approve" || o === "toclient"; };
   const sigSigned = () => !!(state.sig.strokes && state.sig.strokes.length);
   const checksDone = () => CHECKS.every((c, k) => state.sig.checks[k]);
   function approvalReady() { const o = sigOutcome(), txt = !!(state.sig.change || "").trim();
-    if (noSig(o)) return txt;
+    if (noSig(o)) return !needText(o) || txt;
     if (!needChecks(o) && !txt) return false;
     return (!needChecks(o) || checksDone()) && sigSigned(); }
   function approvalWhy() { const o = sigOutcome(), txt = !!(state.sig.change || "").trim();
-    if (noSig(o)) return "Tell us what needs to change before you send.";
+    if (noSig(o)) return CLIENT_NOSIGN ? "Write your question or the change you want." : "Tell us what needs to change before you send.";
     if (!needChecks(o) && !txt) return o === "change" ? "Write the change you want." : "Write the changes you want.";
     if (needChecks(o) && !checksDone()) return "Tick every box in the approval section.";
     return "Sign in the box above your name."; }
   const OUTCOME_LINE = { approve: "OUTCOME: APPROVED as shown", change: "OUTCOME: APPROVED WITH THIS CHANGE: ", notready: "OUTCOME: NOT READY, needs changes: ",
-    toclient: "OUTCOME: SHOP APPROVED, send the rest to the client", stf_then_shop: "OUTCOME: SHOP WANTS CHANGES, then back to the shop before the client: ", stf_then_client: "OUTCOME: SHOP APPROVED WITH CHANGES, then send the rest to the client: " };
+    toclient: "OUTCOME: SHOP APPROVED, send the rest to the client", stf_then_shop: "OUTCOME: SHOP WANTS CHANGES, then back to the shop before the client: ", stf_then_client: "OUTCOME: SHOP APPROVED WITH CHANGES, then send the rest to the client: ",
+    answers: "OUTCOME: CLIENT ANSWERS ARE FINAL (no signature needed)", question: "OUTCOME: CLIENT HAS A QUESTION OR WANTS A CHANGE: " };
+  /* A2.12: what happens after this person presses the button (portal pages). */
+  function nextLine(o) { o = o || sigOutcome();
+    if (AUD === "shop") {
+      if (o === "approve" || o === "toclient") return (nDelegated() || clientSignOn()) ? "Next: it goes straight to " + CLIENTCO + (clientSignOn() ? " to approve and sign." : " to answer what you passed.") : "Next: that's the last sign-off. Ski Town Fabricators gets it approved and ready to ship.";
+      if (o === "change" || o === "stf_then_client") return "Next: Ski Town Fabricators makes the change" + (o === "change" ? "" : "s") + ", then " + ((o === "stf_then_client" || clientSignOn()) ? "it goes to " + CLIENTCO + "." : "it's ready to ship.");
+      return "Next: Ski Town Fabricators makes the changes and sends it back to you.";
+    }
+    if (AUD === "client") return (o === "approve" || o === "answers") ? "Next: that's the last sign-off. Ski Town Fabricators gets it approved." : "Next: Ski Town Fabricators follows up with you.";
+    return ""; }
   function approvalLines() { if (!SIGNER) return [];
     const o = sigOutcome(), who = (SIGNER.name ? SIGNER.name + ", " : "") + SIGNER.company + " (" + SIGNER.role + ")";
-    const L = [OUTCOME_LINE[o] + (o === "approve" || o === "toclient" ? "" : clip(state.sig.change, 400))];
+    const L = [OUTCOME_LINE[o] + (!needText(o) ? "" : clip(state.sig.change, 400))];
+    if (AUD === "shop" && PORTAL) L.push("Client signature: " + (clientSignOn() ? "yes, " + CLIENTCO + " approves and signs too" : "not needed"));
     if ((state.sig.note || "").trim() && !noSig(o)) L.push("Note for the record: " + clip(state.sig.note, 400));
     if (!noSig(o) && sigSigned()) L.push("Signed: " + who + ", " + new Date(state.sig.at || Date.now()).toLocaleString() + ", via STF portal, " + (REVIEW.rev || "") + (state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ" ? " (TEST)" : ""));
     return L; }
   function approvalRecord(at) { if (!SIGNER) return null; const o = sigOutcome();
     return { review: REVIEW.id, audience: AUD, rev: REVIEW.rev || "", outcome: o, change: (state.sig.change || "").trim(), note: (state.sig.note || "").trim(), checks: CHECKS.map((c, k) => ({ text: c, checked: !!state.sig.checks[k] })),
-      signer: { name: SIGNER.name, company: SIGNER.company, role: SIGNER.role }, signed: !noSig(o) && sigSigned(), strokes: !noSig(o) ? (state.sig.strokes || []) : [], png: !noSig(o) ? (state.sig.png || "") : "", by: state.me || "", test: state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ", at }; }
+      signer: { name: SIGNER.name, company: SIGNER.company, role: SIGNER.role }, clientSign: AUD === "shop" ? clientSignOn() : undefined, signed: !noSig(o) && sigSigned(), strokes: !noSig(o) ? (state.sig.strokes || []) : [], png: !noSig(o) ? (state.sig.png || "") : "", by: state.me || "", test: state.me === "u_eivqCuDJzvQ2kXhL3TJrjQ", at }; }
   /* Signature as text for the comment channel: strokes on a 1000 x 333 grid, thinned, "x,y x,y|x,y" per stroke. The chat redraws it on the approval PDF. */
   function sigComment() { if (!SIGNER || noSig() || !sigSigned()) return "";
     const thin = st => { const out = []; st.forEach(p => { const q = out[out.length - 1]; if (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) >= 6) out.push(p); }); if (out.length === 1 && st.length > 1) out.push(st[st.length - 1]); return out; };
@@ -1134,11 +1166,11 @@ const REVIEW = window.STF_REVIEW;
   const herePage = (label, slideIdx) => String(label).replace(new RegExp("\\bon page " + slideIdx + "\\b", "i"), "on this page");
   function approvalPage(p) {
     const panel = el("div", { class: "panel" });
-    panel.append(el("div", { class: "card" }, el("div", { class: "slidehead" }, el("span", { class: "status " + slideStatus(p), text: slideStatus(p) === "need" ? "Needs your signature" : "Signed" }), el("span", { class: "eyebrow", text: "Last page" })),
-      el("h2", { text: p.title }), el("p", { class: "lede", text: "Everything you answered is listed below. " + (nDelegated() ? "Choose what happens next, " : "") + (needChecks() ? "tick the boxes, sign, " : noSig() ? "write what needs to change, " : "write the changes, sign, ") + "then press " + (noSig() ? "Send my answers" : "Sign and submit") + " at the bottom." })));
+    panel.append(el("div", { class: "card" }, el("div", { class: "slidehead" }, el("span", { class: "status " + slideStatus(p), text: slideStatus(p) === "need" ? (CLIENT_NOSIGN ? "Ready when you are" : "Needs your signature") : (CLIENT_NOSIGN ? "Ready to send" : "Signed") }), el("span", { class: "eyebrow", text: "Last page" })),
+      el("h2", { text: p.title }), el("p", { class: "lede", text: "Everything you answered is listed below. " + (CLIENT_NOSIGN ? "Choose one, " : (nDelegated() ? "Choose what happens next, " : "") + (needChecks() ? "tick the boxes, sign, " : noSig() ? "write what needs to change, " : "write the changes, sign, ")) + "then press " + (noSig() ? "Send my answers" : "Sign and submit") + " at the bottom." })));
     const ul = el("ul", { class: "bul" }); decisionIds.forEach(id => { const o = D[id].options.find(x => x.id === pickOf(id)); ul.append(el("li", {}, el("b", { text: D[id].title + ": " }), o ? clip(o.label, 120) : "(no answer yet)", noteOf(id).trim() ? " · " + clip(noteOf(id), 160) : "")); });
     const nDel = decisionIds.filter(id => pickOf(id) === "delegate").length;
-    if (nDel) ul.append(el("li", { text: nDel + " item" + (nDel > 1 ? "s" : "") + " passed to " + CLIENTCO + ". Ski Town Fabricators sends them a page with only those questions after you submit; your signature covers the rest." }));
+    if (nDel) ul.append(el("li", { text: nDel + " item" + (nDel > 1 ? "s" : "") + " passed to " + CLIENTCO + ". They get a page with only those questions after you submit; your signature covers the rest." }));
     panel.append(el("div", { class: "card" }, el("p", { class: "label", text: "Your answers" }), ul));
     panel.append(approvalBlock());
     panel.append(commentBox(state.i + ". " + p.title));
@@ -1149,13 +1181,13 @@ const REVIEW = window.STF_REVIEW;
   function approvalBlock() {
     const o = sigOutcome(); const notready = noSig(o);
     const box = el("section", { class: "approval" + (notready ? " locked" : ""), "aria-label": "Final approval" });
-    box.append(el("h3", { text: AUD === "shop" ? "Shop approval" : "Your approval" }),
+    box.append(el("h3", { text: AUD === "shop" ? "Shop approval" : CLIENT_NOSIGN ? "Send your answers" : "Your approval" }),
       el("p", { class: "why", style: "margin:0", text: (nDelegated() ? "You passed " + nDelegated() + " item" + (nDelegated() > 1 ? "s" : "") + " to " + CLIENTCO + ". Choose what happens next: send them on now, or have us make changes first. " : "")
-        + (needChecks(o) ? "Tick each box and sign above your name. " : notready ? "Write what needs to change; no signature yet. " : "Write the changes and sign; the boxes are optional. ") + "Every answer above is included. "
+        + (CLIENT_NOSIGN ? "No signature needed on this job. " : needChecks(o) ? "Tick each box and sign above your name. " : notready ? "Write what needs to change; no signature yet. " : "Write the changes and sign; the boxes are optional. ") + "Every answer above is included. "
         + (AUD === "client" && needChecks(o) ? "If something isn't right, choose one of the other two options." : "") }));
     const ul = el("ul", { class: "checks" });
     ul.append(el("li", { class: "auto" }, el("input", { type: "checkbox", disabled: "", checked: decisionIds.every(ready) ? "" : null }), el("span", { text: "Every question on this page is answered (" + decisionIds.filter(ready).length + " of " + decisionIds.length + ")." })));
-    CHECKS.forEach((c, k) => { const cb = el("input", { type: "checkbox", id: "chk-" + k }); cb.checked = !!state.sig.checks[k]; cb.disabled = notready || !needChecks(o);
+    if (!CLIENT_NOSIGN) CHECKS.forEach((c, k) => { const cb = el("input", { type: "checkbox", id: "chk-" + k }); cb.checked = !!state.sig.checks[k]; cb.disabled = notready || !needChecks(o);
       cb.addEventListener("change", () => { state.sig.checks[k] = cb.checked; keepDraft(); tally(); submitBar(); apMsgRefresh(); });
       ul.append(el("li", {}, cb, el("label", { for: "chk-" + k, text: c }))); });
     box.append(ul);
@@ -1163,10 +1195,15 @@ const REVIEW = window.STF_REVIEW;
     OUTCOMES().forEach(([v, lab]) =>
       oc.append(el("button", { type: "button", class: "opt", role: "radio", "aria-checked": String(o === v), onclick: () => { state.sig.outcome = v; keepDraft(); render(); } }, el("span", { class: "dot", "aria-hidden": "true" }), el("span", { text: lab }))));
     box.append(oc);
-    if (!needChecks(o)) { const ch = el("textarea", { id: "sig-change", placeholder: o === "change" ? "The one change you want (small changes only; we issue the next rev with it and your signature carries over)" : o === "stf_then_shop" ? "What we should change before you look at it again" : o === "stf_then_client" ? "The changes we should make before " + CLIENTCO + " gets their page" : "What needs to change before you can approve" });
+    if (AUD === "shop" && PORTAL && !noSig(o)) { const cs = el("input", { type: "checkbox", id: "sig-clientsign" }); cs.checked = clientSignOn(); if (REVIEW.stfRequiresClientSign) cs.disabled = true;
+      cs.addEventListener("change", () => { state.sig.clientSign = cs.checked; keepDraft(); render(); });
+      box.append(el("p", { class: "why clientsign", style: "margin:0;display:flex;gap:8px;align-items:center" }, cs, el("label", { for: "sig-clientsign", text: REVIEW.stfRequiresClientSign ? "Ski Town Fabricators requires " + CLIENTCO + " to approve and sign this job too." : "Have " + CLIENTCO + " approve and sign too" }))); }
+    if (PORTAL && nextLine(o)) box.append(el("p", { class: "why nextline", style: "margin:0;font-weight:600", text: nextLine(o) }));
+    if (needText(o)) { const ch = el("textarea", { id: "sig-change", placeholder: o === "change" ? "The one change you want (small changes only; we issue the next rev with it and your signature carries over)" : o === "stf_then_shop" ? "What we should change before you look at it again" : o === "stf_then_client" ? "The changes we should make before " + CLIENTCO + " gets their page" : o === "question" ? "Your question, or the change you'd like" : "What needs to change before you can approve" });
       ch.value = state.sig.change || ""; ch.addEventListener("input", () => { state.sig.change = ch.value; keepDraft(); tally(); submitBar(); }); box.append(ch); }
     if (!notready) { const nt = el("textarea", { id: "sig-note", placeholder: "Note for the record (doesn't change the package): delivery timing, who to call, site access…", style: "min-height:48px" });
       nt.value = state.sig.note || ""; nt.addEventListener("input", () => { state.sig.note = nt.value; keepDraft(); }); box.append(nt); }
+    if (CLIENT_NOSIGN) { box.append(el("div", { class: "saverow" }, el("span", { class: "savemsg", id: "apMsg", text: apMsgText() }))); return box; }
     const pad = el("div", { class: "sigpad" + (sigSigned() ? " signed" : "") }); const cv = el("canvas", { "aria-label": "Sign here" }); pad.append(cv, el("div", { class: "sigline" }), el("div", { class: "sighint", text: "Sign here (finger or mouse)" }));
     box.append(pad, el("p", { class: "signame", text: (SIGNER.name ? SIGNER.name + ", " : "") + SIGNER.company + " (" + SIGNER.role + ")" }),
       el("p", { class: "sigmeta", text: "I approve " + (REVIEW.job || REVIEW.title) + (REVIEW.rev ? " " + REVIEW.rev : "") + (o === "toclient" ? ": my answers above; the items I passed go to " + CLIENTCO : o === "stf_then_client" ? " with the changes above; the items I passed go to " + CLIENTCO + " after them" : " as shown" + (o === "change" ? ", with the change above" : "")) + ". " + new Date(state.sig.at || Date.now()).toLocaleString() + " · via STF portal" }),
@@ -1214,7 +1251,7 @@ const REVIEW = window.STF_REVIEW;
     if (state.dragging) { state.renderLater = true; return; }
     const main = document.getElementById("main"); const ae = document.activeElement && document.activeElement.id;
     main.replaceChildren(state.i === 0 ? cover() : (pages[state.i].approval ? approvalPage(pages[state.i]) : slide(pages[state.i])));
-    if (ae) { const f = document.getElementById(ae); if (f) { f.focus(); if (f.setSelectionRange) { const L = f.value.length; f.setSelectionRange(L, L); } } }
+    if (ae) { const f = document.getElementById(ae); if (f) { f.focus(); if (f.setSelectionRange && /^(text|search|url|tel|password)?$/.test(f.type || "") || f.tagName === "TEXTAREA") { try { const L = f.value.length; f.setSelectionRange(L, L); } catch (e) {} } } }
     chips(); tally(); submitBar();
     if (state.zoomSide) state.zoomSide();
   }
@@ -1230,7 +1267,7 @@ const REVIEW = window.STF_REVIEW;
     const db = await C.use("db");
     /* A2.8: on shop/client pages the database is read-only or absent for outside viewers; answers go by comment, so the page stays live. */
     if (!db) { if (!EXT || window.STF_PREVIEW) state.readOnly = true; render(); return; }
-    state.db = db;
+    state.db = db; if (window.STF_LOCKED) state.readOnly = true;
     try { const u = await C.use("user"); if (u && u.id) state.me = await u.id(); } catch (e) {}
     db.collection("decisions").onSnapshot(snap => { const next = {};
       (snap.docs || []).forEach(d => { const v = d.data(); if (v && v.review === REVIEW.id) next[d.id] = v; });
@@ -1239,4 +1276,496 @@ const REVIEW = window.STF_REVIEW;
 })();
 </script>
 
+
+<style>
+/* STF Portal menu + help (rev P0.8). Own colors so it looks the same on every page. */
+#snbar,#sndrawer,#snview,#sncard,#snq,#snpop{--sn-bg:#16181d;--sn-fg:#fff;--sn-panel:#fff;--sn-ink:#16181d;--sn-muted:#5b616b;--sn-line:#d6d9de;--sn-acc:#2348c4;--sn-soft:#eef1f6;--sn-warn:#b4231a;
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;box-sizing:border-box}
+@media (prefers-color-scheme: dark){#sndrawer,#snview,#sncard,#snpop{--sn-panel:#1d2026;--sn-ink:#e8eaed;--sn-muted:#a3a9b2;--sn-line:#353a43;--sn-acc:#8fa8ff;--sn-soft:#262a32}}
+#snbar *,#sndrawer *,#snview *,#sncard *,#snpop *{box-sizing:border-box}
+#snbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--sn-bg);color:var(--sn-fg);padding:6px 12px;margin:-16px -16px 12px;position:sticky;top:0;z-index:800}
+body.sn-review #snbar{margin:0}
+#snbar .snbtn{display:inline-flex;align-items:center;gap:8px;font:600 15px system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;background:transparent;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:40px}
+#snbar .snbtn:focus-visible,#sndrawer button:focus-visible,#sndrawer a:focus-visible,#snview button:focus-visible,#snq:focus-visible,#sncard button:focus-visible{outline:3px solid #8fa8ff;outline-offset:2px}
+.snham{width:18px;height:12px;display:inline-grid;align-content:space-between}.snham i{display:block;height:2px;background:currentColor;border-radius:2px}
+.snbadge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#e0412f;color:#fff;font:700 12px/20px system-ui;text-align:center}
+#snbar .sntitle{font-weight:700;letter-spacing:.04em;font-size:14px}
+#snbar .snctx{font-size:13px;opacity:.85;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#snbar .snwho{font-size:13px;opacity:.85}
+#snbar .snpv{background:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;font-size:13px}
+#snbar a{color:#fff}
+#snshade{position:fixed;inset:0;background:rgba(10,12,16,.5);z-index:900}
+#sndrawer{position:fixed;top:0;left:0;bottom:0;width:min(360px,92vw);background:var(--sn-panel);color:var(--sn-ink);z-index:901;overflow-y:auto;box-shadow:4px 0 24px rgba(0,0,0,.3);display:flex;flex-direction:column}
+#sndrawer .snhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--sn-line)}
+#sndrawer .snhead b{display:block;font-size:16px}#sndrawer .snhead span{font-size:13px;color:var(--sn-muted)}
+.snx{border:1px solid var(--sn-line);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;min-width:40px;min-height:40px;font-size:18px;cursor:pointer}
+#sndrawer h4{margin:0;padding:14px 16px 6px;font:700 12px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sn-muted);display:flex;align-items:center;gap:8px}
+#sndrawer ul{list-style:none;margin:0;padding:0 8px 6px}
+#sndrawer li>a,#sndrawer li>button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:15px system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--sn-ink);background:none;border:0;border-radius:8px;padding:10px;min-height:44px;cursor:pointer;text-decoration:none}
+#sndrawer li>a:hover,#sndrawer li>button:hover{background:var(--sn-soft)}
+#sndrawer li>[aria-disabled="true"]{color:var(--sn-muted);cursor:default}#sndrawer li>[aria-disabled="true"]:hover{background:none}
+#sndrawer .snsub{padding-left:22px}
+#sndrawer .snmeta{margin-left:auto;font-size:12px;color:var(--sn-muted);white-space:nowrap}
+#sndrawer .snsoon{margin-left:auto;font:600 11px system-ui;border:1px solid var(--sn-line);border-radius:999px;padding:1px 8px;color:var(--sn-muted)}
+#sndrawer .snnone{padding:6px 10px 10px;font-size:14px;color:var(--sn-muted)}
+#sndrawer .snfoot{margin-top:auto;padding:12px 16px;font-size:12px;color:var(--sn-muted);border-top:1px solid var(--sn-line)}
+.sndotr{width:9px;height:9px;border-radius:50%;background:#e0412f;display:inline-block}
+#snview{position:fixed;inset:0;z-index:850;background:var(--sn-panel);color:var(--sn-ink);overflow-y:auto}
+#snview .snvhead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--sn-bg);color:#fff}
+#snview .snvhead h2{margin:0;font:700 16px system-ui;letter-spacing:.03em;flex:1}
+#snview .snvhead button{color:#fff;background:transparent;border:1px solid rgba(255,255,255,.35);border-radius:8px;min-height:40px;padding:0 12px;font:600 14px system-ui;cursor:pointer}
+#snview .snvbody{max-width:880px;margin:0 auto;padding:16px 16px 60px;display:grid;gap:12px}
+#snview .snvbody p{margin:0}
+.snnote{color:var(--sn-muted);font-size:14px}
+.snbtn2{font:600 14px system-ui;border:1px solid var(--sn-ink);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;padding:9px 14px;cursor:pointer;min-height:42px}
+.snbtn2.pri{background:var(--sn-ink);color:var(--sn-panel)}
+.snbtn2:disabled{opacity:.5;cursor:not-allowed}
+#snview textarea,#snview input[type=search]{width:100%;font:15px system-ui;padding:10px;border:1px solid var(--sn-line);border-radius:8px;background:var(--sn-panel);color:var(--sn-ink)}
+#snview textarea{min-height:110px}
+#snview details{border:1px solid var(--sn-line);border-radius:8px;padding:0 12px}
+#snview details>summary{cursor:pointer;padding:12px 0;font-weight:600;list-style-position:outside}
+#snview details .sna{padding:0 0 12px;display:grid;gap:8px}
+#snview details .sna ol,#snview details .sna ul{margin:0;padding-left:22px;display:grid;gap:4px}
+#snview h3{margin:10px 0 0;font:700 13px system-ui;letter-spacing:.06em;text-transform:uppercase;color:var(--sn-muted)}
+.snqa{border-left:3px solid var(--sn-acc);background:var(--sn-soft);border-radius:0 8px 8px 0;padding:10px 12px;display:grid;gap:6px}
+.snqa .snqm{font-size:12px;color:var(--sn-muted)}
+.snqa.wait{border-left-color:var(--sn-line)}
+.snmsg{font-size:14px;padding:8px 10px;border-radius:6px;background:var(--sn-soft)}.snmsg.err{color:var(--sn-warn)}
+.snrowb{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sngrid{display:grid;gap:8px}
+.sngrid>button{display:flex;justify-content:space-between;align-items:center;text-align:left;font:15px system-ui;border:1px solid var(--sn-line);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;padding:12px;cursor:pointer;min-height:48px}
+.sngrid>button:hover{background:var(--sn-soft)}
+#snq{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:840;width:52px;height:52px;border-radius:50%;border:0;background:#16181d;color:#fff;font:700 24px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}
+#snq .sndotr{position:absolute;top:4px;right:4px;border:2px solid #fff;width:13px;height:13px}
+#snpop{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:78px;z-index:841;width:min(300px,calc(100vw - 32px));background:var(--sn-panel);color:var(--sn-ink);border:1px solid var(--sn-line);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:8px}
+#snpop b{display:block;padding:8px 10px 4px;font-size:13px;color:var(--sn-muted);letter-spacing:.06em;text-transform:uppercase}
+#snpop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;font:15px system-ui;color:var(--sn-ink);background:none;border:0;border-radius:8px;padding:10px;min-height:44px;cursor:pointer}
+#snpop button:hover{background:var(--sn-soft)}
+#snring{position:fixed;z-index:950;border:3px solid #ffb020;border-radius:10px;box-shadow:0 0 0 9999px rgba(10,12,16,.45);pointer-events:none;transition:all .15s}
+#snring.none{border:0;box-shadow:0 0 0 9999px rgba(10,12,16,.45);width:0;height:0;left:50%;top:50%}
+#sncard{position:fixed;z-index:951;width:min(380px,calc(100vw - 32px));background:var(--sn-panel);color:var(--sn-ink);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.4);padding:16px;display:grid;gap:10px}
+#sncard .sncnt{font-size:12px;color:var(--sn-muted)}
+#sncard b{font-size:17px}
+#sncard p{margin:0}
+#sncard label{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--sn-muted)}
+#sncard label input{width:18px;height:18px}
+#sncard .snrowb{justify-content:space-between}
+#sncard .snskip{background:none;border:0;color:var(--sn-muted);text-decoration:underline;font:14px system-ui;cursor:pointer;padding:6px 0}
+@media (max-width:600px){#snbar .sntitle,#snbar .snwho{display:none}#snbar .snctx{flex-basis:0;font-size:12px}}
+@media (max-width:600px){#sncard{left:16px!important;right:16px;bottom:16px;top:auto!important;width:auto;transform:none!important}}
+</style>
+<script>
+/* STF Portal menu + help (rev P0.8, Apps Spec P19).
+   - A bar on every page with the Menu: Needs my attention, Jobs (job -> its parts), People / My crew, Help.
+   - Help: a short tour per role and page (on by default, skippable, "Don't show this again"), "Show me how to..." guides,
+     Common questions (Drive: STF Portal Help/help.md), Ask Ski Town Fabricators (answered by FAB - Help or Justin), My questions.
+   - After the tour, help stays one tap away under the ? button in the corner. */
+(function () {
+  var P = window.STF_PORTAL || {};
+  var PAGE = window.STF_APP === "review" ? "review" : "cfg";
+  var Q = new URLSearchParams(location.search);
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var el = function (tag, attrs, kids) { var e = document.createElement(tag); for (var k in (attrs || {})) { var v = attrs[k]; if (v == null || v === false) continue; if (k === "text") e.textContent = v; else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v); } (kids || []).forEach(function (c) { if (c) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); }); return e; };
+  var call = function (fn, args) { return window.claude.portal.call(fn, args); };
+  var href = function (page, extra) { var u = new URLSearchParams(); if (P.token) u.set("k", P.token); for (var k in (extra || {})) if (extra[k]) u.set(k, extra[k]); var s = u.toString(); return (page === "review" ? "review.html" : "./") + (s ? "?" + s : ""); };
+  var first = function () { return String(P.name || "").split(/[\s(]/)[0] || "there"; };
+  var curJob = function () { if (PAGE === "review") return P.reviewJob || Q.get("job") || ""; var j = document.getElementById("job"); return (j && j.value) || Q.get("job") || ""; };
+  var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  var role = function () { return P.owner ? "owner" : P.role; };
+  var isShopSide = function () { return role() === "owner" || role() === "manager" || role() === "crew"; };
+  var managers = function () { return (P.managers || []).join(" / ") || "your shop manager"; };
+
+  /* ---------- bar ---------- */
+  var bar, menuBtn, badge, ctx, qBtn, qDot;
+  function buildBar() {
+    if (PAGE === "review") document.body.classList.add("sn-review");
+    badge = el("span", { "class": "snbadge", hidden: true });
+    menuBtn = el("button", { type: "button", "class": "snbtn", id: "snmenu", "aria-haspopup": "dialog", "aria-expanded": "false", onclick: function () { openDrawer(); } },
+      [el("span", { "class": "snham", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]), el("span", { text: "Menu" }), badge]);
+    ctx = el("span", { "class": "snctx" });
+    bar = el("header", { id: "snbar" }, [menuBtn, el("span", { "class": "sntitle", text: "SKI TOWN FABRICATORS" }), ctx,
+      el("span", { "class": "snwho", text: (P.name || "") + (P.roleName ? " · " + P.roleName : "") })]);
+    document.body.insertBefore(bar, document.body.firstChild);
+    qDot = el("span", { "class": "sndotr", hidden: true });
+    qBtn = el("button", { type: "button", id: "snq", "aria-label": "Help", "aria-haspopup": "menu", onclick: togglePop }, [document.createTextNode("?"), qDot]);
+    document.body.appendChild(qBtn);
+    setCtx();
+    paintBadges();
+  }
+  function setCtx(extra) {
+    if (!ctx) return; ctx.innerHTML = "";
+    var j = curJob(), jt = ((P.jobs || []).filter(function (x) { return x.code === j; })[0] || {}).title || "";
+    ctx.appendChild(document.createTextNode((PAGE === "review" ? "Review · " : "Configurator · ") + (j || "no job") + (jt ? " · " + jt : "")));
+    if (extra && extra.preview) {
+      ctx.appendChild(document.createTextNode(" "));
+      ctx.appendChild(el("span", { "class": "snpv", text: "PREVIEW as " + extra.as + " · nothing is saved" }));
+      ["shop", "client"].forEach(function (x) { if (x !== extra.as) { ctx.appendChild(document.createTextNode(" ")); ctx.appendChild(el("a", { href: href("review", { job: j, as: x }), text: "Preview as " + x })); } });
+    }
+    if (extra && extra.locked) { ctx.appendChild(document.createTextNode(" ")); ctx.appendChild(el("span", { "class": "snpv", style: "background:#555", text: "Read only · " + (extra.stageName || "moved on") })); }
+  }
+  function attnCount() { return (P.attention || []).length; }
+  function paintBadges() {
+    var n = attnCount() + (P.helpNew ? 1 : 0);
+    if (badge) { badge.hidden = !n; badge.textContent = n; badge.setAttribute("aria-label", n + " waiting"); }
+    if (qDot) qDot.hidden = !P.helpNew;
+  }
+  function refreshNav() { return call("nav", []).then(function (n) { P.attention = n.attention; P.helpNew = n.helpNew; paintBadges(); }, function () {}); }
+
+  /* ---------- drawer ---------- */
+  var shade, drawer, openJob = null;
+  function closeDrawer() { if (shade) shade.remove(); if (drawer) drawer.remove(); shade = drawer = null; if (menuBtn) { menuBtn.setAttribute("aria-expanded", "false"); menuBtn.focus(); } }
+  function item(text, opts) {
+    opts = opts || {};
+    var kids = [document.createTextNode(text)];
+    if (opts.meta) kids.push(el("span", { "class": "snmeta", text: opts.meta }));
+    if (opts.soon) kids.push(el("span", { "class": "snsoon", text: "coming soon" }));
+    if (opts.dot) kids.push(el("span", { "class": "sndotr", "aria-label": "new" }));
+    var n;
+    if (opts.soon) n = el("button", { type: "button", "aria-disabled": "true", title: opts.soon === true ? "Comes with the Shop Floor app" : opts.soon }, kids);
+    else if (opts.href) n = el("a", { href: opts.href }, kids);
+    else n = el("button", { type: "button", onclick: function () { closeDrawer(); opts.go(); } }, kids);
+    return el("li", { "class": opts.sub ? "snsub" : null }, [n]);
+  }
+  function attnItem(a) {
+    if (a.kind === "review") return item(a.text + " · " + a.job, { href: href("review", { job: a.job }) });
+    if (a.kind === "stf" || a.kind === "ship") return item(a.text + " · " + a.job, { go: function () { openView("people", { job: a.job }); } });
+    if (a.kind === "crew") return item(a.text, { go: function () { openView("people"); } });
+    if (a.kind === "help") return item(a.text, { go: function () { openView("helpadmin"); } });
+    if (a.kind === "requests") return item(a.text, { href: PAGE === "cfg" ? "#logtitle" : href("cfg", {}) + "#logtitle" });
+    return item(a.text || "", { go: function () {} });
+  }
+  function jobParts(j) {
+    var ul = el("ul", { "class": "snparts" });
+    var rv = (P.reviews || []).filter(function (r) { return r.job === j.code && r.audience !== "justin"; })[0];
+    var rvOwner = role() === "owner" && (P.reviews || []).some(function (r) { return r.job === j.code; });
+    ul.appendChild(item("Job overview", { sub: true, go: function () { openView("job", { job: j.code }); } }));
+    if (rv) ul.appendChild(item("Review & approval", { sub: true, href: href("review", { job: j.code }), meta: rv.stageName || "" }));
+    if (rvOwner) { ul.appendChild(item("Preview review as shop", { sub: true, href: href("review", { job: j.code, as: "shop" }) })); ul.appendChild(item("Preview review as client", { sub: true, href: href("review", { job: j.code, as: "client" }) })); }
+    ul.appendChild(item("Configurator: try changes, send requests", { sub: true, href: href("cfg", { job: j.code }) }));
+    ul.appendChild(item(role() === "crew" ? "My questions and requests" : "My requests and their status", { sub: true, href: href("cfg", { job: j.code }) + "#logtitle" }));
+    if (isShopSide()) { ul.appendChild(item("Cut list", { sub: true, soon: true })); ul.appendChild(item("Plasma files", { sub: true, soon: true })); ul.appendChild(item("Shop view (crew tasks)", { sub: true, soon: true })); }
+    return ul;
+  }
+  function redraw() { if (!drawer) return; var y = drawer.scrollTop, a = document.activeElement && document.activeElement.textContent; closeDrawerSilently(); openDrawer(null, true);
+    drawer.scrollTop = y; if (a) { var hit = Array.prototype.filter.call(drawer.querySelectorAll("button, a"), function (n) { return n.textContent === a; })[0]; if (hit) hit.focus({ preventScroll: true }); } }
+  function openDrawer(focusSel, quiet) {
+    if (drawer) return;
+    if (!quiet) { var before = JSON.stringify([P.attention, P.helpNew]); refreshNav().then(function () { if (drawer && JSON.stringify([P.attention, P.helpNew]) !== before) redraw(); }); }
+    shade = el("div", { id: "snshade", onclick: closeDrawer });
+    drawer = el("nav", { id: "sndrawer", role: "dialog", "aria-modal": "true", "aria-label": "Menu" });
+    drawer.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+    drawer.appendChild(el("div", { "class": "snhead" }, [el("div", {}, [el("b", { text: P.name || "Ski Town Fabricators" }), el("span", { text: (P.roleName || "") + (P.shopName ? " · " + P.shopName : "") })]),
+      el("button", { type: "button", "class": "snx", "aria-label": "Close menu", text: "×", onclick: closeDrawer })]));
+    // needs my attention
+    var att = P.attention || [];
+    drawer.appendChild(el("h4", {}, [document.createTextNode("Needs my attention"), att.length ? el("span", { "class": "snbadge", text: String(att.length) }) : null]));
+    var au = el("ul", { "class": "snattn" }); if (!att.length) au.appendChild(el("li", { "class": "snnone", text: "Nothing waiting on you." })); att.forEach(function (a) { au.appendChild(attnItem(a)); });
+    drawer.appendChild(au);
+    // jobs
+    drawer.appendChild(el("h4", { text: "Jobs" }));
+    var ju = el("ul", { "class": "snjobs" }), js = P.jobs || [];
+    if (!js.length) ju.appendChild(el("li", { "class": "snnone", text: role() === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet." }));
+    js.forEach(function (j) {
+      var open = openJob === j.code || (js.length === 1 && openJob === null);
+      var b = el("button", { type: "button", "aria-expanded": String(open), onclick: function () { openJob = open ? "" : j.code; redraw(); } },
+        [el("span", { text: (open ? "▾ " : "▸ ") + j.code }), el("span", { "class": "snmeta", text: j.title || "" })]);
+      var li = el("li", {}, [b]); if (open) li.appendChild(jobParts(j)); ju.appendChild(li);
+    });
+    drawer.appendChild(ju);
+    // people
+    if (role() === "owner" || role() === "manager") {
+      drawer.appendChild(el("h4", { text: role() === "owner" ? "People" : "My crew" }));
+      var pu = el("ul");
+      if (role() === "owner") { pu.appendChild(item("People, shops and jobs", { go: function () { openView("people"); } })); pu.appendChild(item("Help questions", { go: function () { openView("helpadmin"); } })); }
+      else { pu.appendChild(item("My crew: add, jobs, approvals", { go: function () { openView("people"); } })); pu.appendChild(item("Jobs by crew member", { soon: true })); }
+      drawer.appendChild(pu);
+    }
+    // help
+    drawer.appendChild(el("h4", { text: "Help" }));
+    drawer.appendChild(helpList("li"));
+    drawer.appendChild(el("div", { "class": "snfoot", text: "Ski Town Fabricators portal · " + (P.rev || "") }));
+    document.body.appendChild(shade); document.body.appendChild(drawer);
+    menuBtn.setAttribute("aria-expanded", "true");
+    var f = (focusSel && $(focusSel, drawer)) || $("button, a", drawer); if (f) f.focus();
+  }
+  function closeDrawerSilently() { if (shade) shade.remove(); if (drawer) drawer.remove(); shade = drawer = null; }
+  function helpList(kind) {
+    var defs = [["Take the tour", function () { startTour(true); }], ["Show me how to…", function () { openView("howto"); }], ["Common questions", function () { openView("faq"); }],
+      ["Ask Ski Town Fabricators", function () { openView("ask"); }], ["My questions and answers", function () { openView("mine"); }, P.helpNew]];
+    if (kind === "li") { var ul = el("ul"); defs.forEach(function (d) { ul.appendChild(item(d[0], { go: d[1], dot: d[2] })); }); return ul; }
+    var w = el("div", { role: "menu" }); w.appendChild(el("b", { text: "Help" }));
+    defs.forEach(function (d) { w.appendChild(el("button", { type: "button", role: "menuitem", onclick: function () { closePop(); d[1](); } }, [document.createTextNode(d[0]), d[2] ? el("span", { "class": "sndotr", style: "margin-left:auto" }) : null])); });
+    return w;
+  }
+  var pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; document.removeEventListener("click", outside, true); } }
+  function outside(e) { if (pop && !pop.contains(e.target) && e.target !== qBtn && !qBtn.contains(e.target)) closePop(); }
+  function togglePop() { if (pop) return closePop(); pop = el("div", { id: "snpop" }); pop.appendChild(helpList("pop")); pop.addEventListener("keydown", function (e) { if (e.key === "Escape") { closePop(); qBtn.focus(); } }); document.body.appendChild(pop); setTimeout(function () { document.addEventListener("click", outside, true); }, 0); var b = $("button", pop); if (b) b.focus(); }
+
+  /* ---------- full-page views ---------- */
+  var view = null, viewBody = null, viewName = "";
+  function closeView() { if (view) view.remove(); view = viewBody = null; viewName = ""; document.body.style.overflow = ""; try { var u = new URL(location.href); if (u.searchParams.has("view")) { u.searchParams.delete("view"); history.replaceState(null, "", u); } } catch (e) {} }
+  function openView(name, opts) {
+    opts = opts || {};
+    if (name === "people" && !window.STFPanel) { location.href = href("cfg", { view: "people", job: opts.job || "" }); return; }
+    closeView();
+    var T = { people: role() === "owner" ? "People, shops and jobs" : "My crew", job: "Job overview", faq: "Common questions", ask: "Ask Ski Town Fabricators", mine: "My questions and answers", howto: "Show me how to…", helpadmin: "Help questions" };
+    viewBody = el("div", { "class": "snvbody" });
+    view = el("section", { id: "snview", role: "dialog", "aria-modal": "true", "aria-label": T[name] || name }, [el("div", { "class": "snvhead" }, [el("h2", { text: T[name] || name }), el("button", { type: "button", text: "Close ✕", onclick: closeView })]), viewBody]);
+    view.addEventListener("keydown", function (e) { if (e.key === "Escape" && !cardEl) closeView(); });
+    document.body.appendChild(view); document.body.style.overflow = "hidden"; viewName = name;
+    (VIEWS[name] || function () { viewBody.appendChild(el("p", { text: "Not found." })); })(viewBody, opts);
+    var h = $("button", view); if (h && !opts.noFocus) h.focus();
+  }
+  var msg = function (box, t, err) { var m = el("p", { "class": "snmsg" + (err ? " err" : ""), role: "status", text: t }); box.appendChild(m); return m; };
+  function answerBlocks(text) {
+    var out = [], list = null, kind = "";
+    String(text || "").split("\n").forEach(function (line) {
+      var m1 = /^\s*\d+[.)]\s+(.*)$/.exec(line), m2 = /^\s*[-*]\s+(.*)$/.exec(line);
+      if (m1 || m2) { var k = m1 ? "ol" : "ul"; if (!list || kind !== k) { list = el(k); kind = k; out.push(list); } list.appendChild(el("li", { text: (m1 || m2)[1] })); return; }
+      list = null; if (line.trim()) out.push(el("p", { text: line.trim() }));
+    });
+    return out;
+  }
+  var VIEWS = {
+    people: function (box, o) { window.STFPanel.people(box, o); },
+    job: function (box, o) {
+      var j = (P.jobs || []).filter(function (x) { return x.code === o.job; })[0] || { code: o.job };
+      var rv = (P.reviews || []).filter(function (r) { return r.job === j.code; })[0];
+      box.appendChild(el("p", {}, [el("b", { text: j.code }), document.createTextNode(j.title ? " · " + j.title : "")]));
+      if (j.shopName && role() !== "client") box.appendChild(el("p", { "class": "snnote", text: "Shop: " + j.shopName }));
+      box.appendChild(el("p", { text: "Approval: " + (rv ? (rv.stageName || rv.stage) : "No review open right now") }));
+      var g = el("div", { "class": "sngrid" });
+      var go = function (t, h) { g.appendChild(el("button", { type: "button", onclick: function () { location.href = h; } }, [document.createTextNode(t), el("span", { text: "→" })])); };
+      if (rv && rv.audience !== "justin") go("Open the review", href("review", { job: j.code }));
+      if (rv && rv.audience === "justin") { go("Preview review as shop", href("review", { job: j.code, as: "shop" })); go("Preview review as client", href("review", { job: j.code, as: "client" })); }
+      go("Configurator: try changes, send requests", href("cfg", { job: j.code }));
+      go("My requests and their status", href("cfg", { job: j.code }) + "#logtitle");
+      if (role() === "owner") g.appendChild(el("button", { type: "button", onclick: function () { openView("people", { job: j.code }); } }, [document.createTextNode("Manage this job (people, send, approval)"), el("span", { text: "→" })]));
+      box.appendChild(g);
+      if (isShopSide()) box.appendChild(el("p", { "class": "snnote", text: "Cut list, plasma files and crew tasks come with the Shop Floor app." }));
+    },
+    faq: function (box) {
+      var s = el("input", { type: "search", placeholder: "Search the questions (for example: approve, crew, photo)", "aria-label": "Search the questions" });
+      box.appendChild(s); var list = el("div", { "class": "sngrid" }); box.appendChild(list);
+      var wait = msg(box, "Loading…");
+      call("help", ["faq", {}]).then(function (rows) {
+        wait.remove();
+        var draw = function () {
+          list.innerHTML = ""; var t = s.value.trim().toLowerCase(), sec = null, n = 0;
+          rows.forEach(function (r) {
+            if (t && (r.q + " " + r.a).toLowerCase().indexOf(t) < 0) return;
+            if (r.section !== sec) { sec = r.section; list.appendChild(el("h3", { text: sec === "STF" ? "Ski Town Fabricators (you)" : sec })); }
+            n++; list.appendChild(el("details", {}, [el("summary", { text: r.q }), el("div", { "class": "sna" }, answerBlocks(r.a))]));
+          });
+          if (!n) list.appendChild(el("p", { "class": "snnote", text: rows.length ? "No question matches that. Ask us below." : "The common questions aren't set up yet. Ask us below." }));
+        };
+        s.addEventListener("input", draw); draw();
+      }, function () { wait.textContent = "Couldn't load the questions right now."; wait.className = "snmsg err"; });
+      box.appendChild(el("div", { "class": "snrowb" }, [el("span", { "class": "snnote", text: "Didn't find it?" }), el("button", { type: "button", "class": "snbtn2 pri", text: "Ask Ski Town Fabricators", onclick: function () { openView("ask"); } })]));
+    },
+    ask: function (box) {
+      box.appendChild(el("p", { text: "Ask anything about the portal or your job. Most answers come within the hour on weekdays, and you'll see them under My questions and answers (the ? shows a red dot)." }));
+      if (role() === "crew") box.appendChild(el("p", { "class": "snnote", text: "Questions about the job itself (sizes, changes) go to " + managers() + " from the configurator. This box is for help using the portal." }));
+      var t = el("textarea", { "aria-label": "Your question", placeholder: "Type your question" }), b = el("button", { type: "button", "class": "snbtn2 pri", text: "Send question" });
+      box.appendChild(t); box.appendChild(el("div", { "class": "snrowb" }, [b, el("span", { "class": "snnote", text: curJob() ? "We'll know you asked from " + curJob() + "." : "" })]));
+      var m = null;
+      b.addEventListener("click", function () {
+        if (!t.value.trim()) { t.focus(); return; } b.disabled = true; if (m) m.remove(); m = msg(box, "Sending…");
+        call("help", ["ask", { question: t.value, page: PAGE === "review" ? "review page" : "configurator", job: curJob() }]).then(function () { t.value = ""; b.disabled = false; m.textContent = "Sent. We'll answer under My questions and answers."; m.className = "snmsg"; showMine(box); },
+          function (e) { b.disabled = false; m.textContent = (e && e.message) === "too_many" ? "That's a lot of questions this hour. Try again a little later." : "Couldn't send it. Check your connection and try again."; m.className = "snmsg err"; });
+      });
+      showMine(box);
+    },
+    mine: function (box) { showMine(box, true); },
+    howto: function (box) {
+      var gs = GUIDES.filter(guideFits);
+      box.appendChild(el("p", { "class": "snnote", text: "Pick one and we'll point to each step on the screen." }));
+      var g = el("div", { "class": "sngrid" });
+      gs.forEach(function (x) { g.appendChild(el("button", { type: "button", onclick: function () { closeView(); runGuide(x.id); } }, [document.createTextNode(x.title), el("span", { text: "→" })])); });
+      box.appendChild(g);
+      box.appendChild(el("div", { "class": "snrowb" }, [el("button", { type: "button", "class": "snbtn2", text: "Take the whole tour", onclick: function () { closeView(); startTour(true); } }), el("button", { type: "button", "class": "snbtn2", text: "Common questions", onclick: function () { openView("faq"); } })]));
+    },
+    helpadmin: function (box) {
+      box.appendChild(el("p", { "class": "snnote", text: "Everyone's questions. FAB - Help answers from the common questions; anything it can't answer is passed to you here. Your answer shows in the asker's portal right away. Tick 'Add to common questions' and FAB - Help adds it to the list." }));
+      var wait = msg(box, "Loading…");
+      call("help", ["list", {}]).then(function (rows) {
+        wait.remove();
+        if (!rows.length) box.appendChild(el("p", { "class": "snnote", text: "No questions yet." }));
+        rows.forEach(function (r) {
+          var c = el("div", { "class": "snqa" + (r.status === "answered" ? "" : " wait") });
+          c.appendChild(el("div", { "class": "snqm", text: r.name + " · " + r.role + " · " + String(r.at).slice(0, 16).replace("T", " ") + (r.job ? " · " + r.job : "") + " · " + (r.status === "answered" ? "answered by " + r.answeredBy : r.status === "to_stf" ? "PASSED TO YOU" : "waiting for FAB - Help") }));
+          c.appendChild(el("b", { text: r.question }));
+          if (r.status === "answered") c.appendChild(el("div", {}, answerBlocks(r.answer)));
+          else {
+            var t = el("textarea", { "aria-label": "Your answer", placeholder: "Your answer (plain words; numbered steps work)" }), cb = el("input", { type: "checkbox", checked: true });
+            var b = el("button", { type: "button", "class": "snbtn2 pri", text: "Save answer" });
+            b.addEventListener("click", function () { if (!t.value.trim()) return; b.disabled = true;
+              call("help", ["answer", { id: r.id, answer: t.value, addToFaq: cb.checked }]).then(function () { openView("helpadmin", { noFocus: true }); refreshNav(); }, function () { b.disabled = false; b.textContent = "Couldn't save. Try again"; }); });
+            c.appendChild(t); c.appendChild(el("div", { "class": "snrowb" }, [b, el("label", {}, [cb, document.createTextNode(" Add to common questions")])]));
+          }
+          box.appendChild(c);
+        });
+      }, function () { wait.textContent = "Couldn't load the questions."; wait.className = "snmsg err"; });
+    }
+  };
+  function showMine(box, markSeen) {
+    var old = $(".snmine", box); if (old) old.remove();
+    var w = el("div", { "class": "sngrid snmine" }); box.appendChild(w);
+    if (!markSeen) w.appendChild(el("h3", { text: "My questions and answers" }));
+    call("help", ["mine", { seen: !!markSeen }]).then(function (rows) {
+      if (markSeen) { P.helpNew = 0; paintBadges(); }
+      if (!rows.length) { w.appendChild(el("p", { "class": "snnote", text: "You haven't asked anything yet." })); if (markSeen) w.appendChild(el("button", { type: "button", "class": "snbtn2 pri", text: "Ask Ski Town Fabricators", onclick: function () { openView("ask"); } })); return; }
+      rows.forEach(function (r) {
+        var c = el("div", { "class": "snqa" + (r.status === "new" ? " wait" : "") });
+        c.appendChild(el("div", { "class": "snqm", text: "Asked " + String(r.at).slice(0, 16).replace("T", " ") + (r.job ? " · " + r.job : "") }));
+        c.appendChild(el("b", { text: r.question }));
+        if (r.status === "new") c.appendChild(el("p", { "class": "snnote", text: "Waiting for an answer." }));
+        else { c.appendChild(el("div", {}, answerBlocks(r.answer))); c.appendChild(el("div", { "class": "snqm", text: (r.status === "to_stf" ? "Passed to Ski Town Fabricators; they'll answer here. " : "Answered by " + r.answeredBy) })); }
+        w.appendChild(c);
+      });
+      if (markSeen) w.appendChild(el("button", { type: "button", "class": "snbtn2", text: "Ask another question", onclick: function () { openView("ask"); } }));
+    }, function () { w.appendChild(el("p", { "class": "snmsg err", text: "Couldn't load your questions." })); });
+  }
+
+  /* ---------- tour + guides ---------- */
+  /* step: { sel (optional; centered card if it isn't on screen), title, text, view (open a view first), drawer: true (open the menu first) } */
+  function T(s) { return String(s).replace(/\{first\}/g, first()).replace(/\{managers\}/g, managers()); }
+  function tourSteps() {
+    var r = role(), S = [];
+    if (PAGE === "cfg") {
+      S.push({ title: "Welcome, {first}", text: "This is your Ski Town Fabricators portal. This short tour shows you around (about a minute). Skip it any time; it's always under the ? button in the corner." });
+      S.push({ sel: "#snmenu", title: "The menu", text: r === "owner" ? "Everything lives here: what needs you, every job, people and shops, help questions, and help. The red number is what's waiting on you."
+        : r === "manager" ? "Everything lives here: what needs you, your jobs, your crew, and help. The red number is what's waiting on you. Tap a job to jump to its review or configurator."
+        : r === "crew" ? "Your jobs and help live here." : "What needs you, your jobs, and help live here. The red number is what's waiting on you." });
+      S.push({ sel: "#viewer", title: "The 3D preview", text: "Drag to turn it; scroll or pinch to zoom. It shows the style. The shop drawings set the exact sizes." });
+      S.push({ sel: "#opts", title: "Try a change", text: r === "crew" && P.level !== "requests" ? "Try options here to see them. Your access is questions only, so describe a change in your message instead." : "Pick options here; ★ marks what's drawn now. Nothing is sent until you press Send." });
+      S.push({ sel: "#pinbtn", title: "Pin a note", text: "Tap Pin a note, then tap the model to put a note on an exact spot." });
+      S.push({ sel: "#form", title: "Send it", text: r === "crew" ? "Write your message (photos too) and press Send. It goes to {managers} first; only what they approve reaches Ski Town Fabricators." : "Add a message or photos and press Send change request. Its status shows in the list below the page." });
+      if (r !== "client") S.push({ sel: "#m-shop", title: "Shop view", text: "Shop view adds the shop-only details, like flat patterns. Clients never see it." });
+      if (r === "manager") S.push({ sel: "#snmenu", title: "Approvals and crew", text: "When a review is ready for you, it shows under Needs my attention. Menu > My crew is where you add crew, pick their jobs, and approve what they send." });
+      if (r === "owner") S.push({ sel: "#snmenu", title: "People, jobs and help", text: "Menu > People, shops and jobs: save people, add jobs, Send to portal, switch the client signature on or off, and move reviews along. Menu > Help questions: answer what FAB - Help passed to you." });
+    } else {
+      S.push({ title: "Welcome, {first}", text: r === "client" ? "This page is your approval for this job. Go page by page, answer what's asked, then send it on the last page. About a minute to learn; skip any time."
+        : "This is the approval page for this job. Go page by page, answer each question (or pass it to the client), then approve on the last page. Skip any time." });
+      S.push({ sel: "#pillNeed", title: "What's left", text: "This shows how many answers are left. Tap it to jump to the next one." });
+      S.push({ sel: "#main", title: "Each page", text: "Pictures with numbered markers (tap one to see what it points at), then the question. Every page has a comment box that follows you to the end." });
+      if (r === "manager" || r === "owner") S.push({ sel: "#main", title: "Not your call?", text: "Pick \"Let the client decide\" on a question. The client gets only the questions you pass, after you approve." });
+      S.push({ sel: "#next", title: "Next and Back", text: "Move between pages here. The last page is the approval." });
+      S.push({ title: "The last page", text: r === "client" ? "Send your answers there (and sign if we asked you to). It goes straight to Ski Town Fabricators." : "Choose what happens next and sign. If nothing needs changing it moves on by itself: to the client if you passed anything or want their signature, otherwise it's approved and ready to ship." });
+    }
+    S.push({ sel: "#snq", title: "Help is right here", text: "Tap ? any time to take this tour again, follow step-by-step help for common tasks, read common questions, or ask Ski Town Fabricators." });
+    return S;
+  }
+  var GUIDES = [
+    { id: "switch", title: "Switch to another job", roles: "owner manager crew client", page: "any", steps: [{ sel: "#snmenu", title: "1. Open the menu", text: "Tap Menu (top left)." }, { drawer: true, sel: "#sndrawer .snjobs", title: "2. Pick the job", text: "Under Jobs, tap the job, then the part you want: the review, the configurator, or your requests." }] },
+    { id: "request", title: "Send a change request", roles: "owner manager client crewreq", page: "cfg", steps: [{ sel: "#opts", title: "1. Make the change", text: "Pick the options you'd like. ★ is what's drawn now." }, { sel: "#pinbtn", title: "2. Point at something (optional)", text: "Tap Pin a note, then tap the model where it applies." }, { sel: "#msg", title: "3. Say what you need", text: "Add anything else here. You can paste a screenshot too." }, { sel: "#send", title: "4. Send it", text: "Press Send change request. It shows in your list with its status." }] },
+    { id: "question", title: "Ask about the job", roles: "crew", page: "cfg", steps: [{ sel: "#msg", title: "1. Type your question", text: "Say what it's about; pin a note on the model if it helps." }, { sel: "#send", title: "2. Send it", text: "It goes to {managers} first. You'll see its status below." }] },
+    { id: "photo", title: "Attach a photo or drawing", roles: "owner manager client crew", page: "cfg", steps: [{ sel: "label[for=reqfile]", title: "Attach", text: "Tap Attach photos or a drawing and pick files (JPG, PNG or PDF). They go with your next request." }] },
+    { id: "status", title: "See the status of my requests", roles: "owner manager client crew", page: "cfg", steps: [{ sel: "#logtitle", title: "Your requests", text: "Everything you've sent is listed here with its status, newest first." }] },
+    { id: "approve", title: "Approve a review", roles: "manager client", page: "review", steps: [{ sel: "#pillNeed", title: "1. Answer each question", text: "This shows what's left. Tap it to jump to the next question." }, { sel: "#next", title: "2. Page by page", text: "Use Next. Add comments in the box on any page." }, { title: "3. The last page", text: "Choose what happens next, sign if asked, and press the button. It goes straight to Ski Town Fabricators." }] },
+    { id: "delegate", title: "Pass a question to the client", roles: "manager", page: "review", steps: [{ sel: "#main", title: "Let the client decide", text: "On the question, pick \"Let the client decide\". After you approve, the client gets only the questions you passed." }] },
+    { id: "crewadd", title: "Add a crew member", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=crew-form]", title: "1. Fill this in", text: "Their name and email, what they can do, and which jobs they can see. Press Add crew." }, { sel: "[data-tour=crew-list]", title: "2. Send them their link", text: "Press Copy link and text or email it to them. The first time they open it, the portal emails them a code." }] },
+    { id: "crewjob", title: "Turn a job on for crew", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=crew-list]", title: "Edit their jobs", text: "Press Edit on the person, tick the jobs they should see, and Save. They see only those jobs, in Shop view." }] },
+    { id: "crewok", title: "Approve what my crew sent", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=waiting]", title: "Waiting on you", text: "Each item shows what they sent. Approve and send to STF, or Don't send. Add a note if you like." }] },
+    { id: "permreq", title: "Ask for a permission change", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=permreq]", title: "Ask STF", text: "Say what you'd like changed (for example letting someone approve). Ski Town Fabricators gets back to you." }] },
+    { id: "person", title: "Save a person and send their link", roles: "owner", page: "cfg", view: "people", steps: [{ sel: "[data-tour=person-form]", title: "1. Save them", text: "Name, email, role and shop (or company for a client). Press Save person." }, { sel: "[data-tour=people]", title: "2. Copy their link", text: "Press Copy link and send it. Only you share links." }] },
+    { id: "job", title: "Add a job and send it to a portal", roles: "owner", page: "cfg", view: "people", steps: [{ sel: "[data-tour=job-form]", title: "1. Add the job", text: "Job code, title, shop, and the people on it. Press Add job." }, { sel: "[data-tour=jobs]", title: "2. Send to portal", text: "Nobody sees the job until you press Send to portal." }] },
+    { id: "stage", title: "Send a review to the shop", roles: "owner", page: "cfg", view: "people", steps: [{ sel: "[data-tour=jobs]", title: "Approval buttons", text: "Under each sent job: Send review to shop, the client signature switch, and Preview as shop or client. After the shop signs, the portal moves it on by itself." }] },
+    { id: "helpq", title: "Answer a help question", roles: "owner", page: "any", view: "helpadmin", steps: [{ sel: "#snview .snqa.wait", title: "Answer it", text: "Type your answer and press Save answer. Keep 'Add to common questions' ticked so it helps the next person." }] },
+    { id: "ask", title: "Ask Ski Town Fabricators", roles: "owner manager crew client", page: "any", view: "ask", steps: [{ sel: "#snview textarea", title: "Type and send", text: "Ask anything about the portal. The answer shows under My questions and answers." }] }
+  ];
+  function guideFits(g) { var r = role(); var rs = g.roles.split(" "); return rs.indexOf(r) >= 0 || (r === "crew" && P.level === "requests" && rs.indexOf("crewreq") >= 0); }
+  var cardEl = null, ringEl = null, cur = null;
+  function endSteps(storeIt) { if (cardEl) cardEl.remove(); if (ringEl) ringEl.remove(); cardEl = ringEl = null; window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true);
+    if (cur && cur.tour && storeIt) store.set(tourKey(), storeIt); if (cur && cur.tour) { try { sessionStorage.setItem(tourKey(), "1"); } catch (e) {} } cur = null; if (qBtn) qBtn.focus(); }
+  function tourKey() { return "stf-tour-" + PAGE + "-" + (P.uid || "x"); }
+  function visible(n) { if (!n) return false; var r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(n).visibility !== "hidden"; }
+  function place() {
+    if (!cur || !cardEl) return;
+    var st = cur.steps[cur.i], t = st.sel ? $(st.sel) : null;
+    if (t && !visible(t)) t = null;
+    if (!t) { ringEl.className = "none"; ringEl.removeAttribute("style"); cardEl.style.left = "50%"; cardEl.style.top = "50%"; cardEl.style.transform = "translate(-50%,-50%)"; return; }
+    var r = t.getBoundingClientRect(), pad = 6, vh = window.innerHeight, vw = window.innerWidth;
+    var top = Math.max(4, r.top - pad), h = Math.min(r.height + pad * 2, vh - top - 4);
+    ringEl.className = ""; ringEl.style.left = Math.max(4, r.left - pad) + "px"; ringEl.style.top = top + "px"; ringEl.style.width = Math.min(r.width + pad * 2, vw - 8) + "px"; ringEl.style.height = Math.max(h, 24) + "px";
+    cardEl.style.transform = ""; var ch = cardEl.offsetHeight, cw = cardEl.offsetWidth;
+    var y = r.bottom + 14; if (y + ch > vh - 8) y = r.top - ch - 14; if (y < 8) y = Math.max(8, vh - ch - 8);
+    cardEl.style.top = y + "px"; cardEl.style.left = Math.min(Math.max(8, r.left), vw - cw - 8) + "px";
+  }
+  /* phones: the card sits at the bottom, so keep the highlighted thing above it */
+  function mobileFit(t) {
+    if (!t || !cardEl || window.innerWidth > 600 || !visible(t)) return;
+    var r = t.getBoundingClientRect(), room = window.innerHeight - cardEl.offsetHeight - 28;
+    if (r.bottom > room || r.top < 56) { var sc = view && view.contains(t) ? view : null, d = r.top - Math.max(64, Math.min(room - r.height, 80));
+      if (sc) sc.scrollTop += d; else window.scrollBy(0, d); }
+  }
+  function waitFor(sel, ms) { return new Promise(function (res) { var t0 = Date.now(); (function poll() { var n = sel ? $(sel) : null; if (!sel || (n && visible(n)) || Date.now() - t0 > ms) return res(n); setTimeout(poll, 150); })(); }); }
+  function showStep() {
+    var st = cur.steps[cur.i];
+    var before = Promise.resolve();
+    if (st.drawer) { closeView(); openDrawer(); before = waitFor(st.sel, 1500); }
+    else if (drawer && cur.i > 0) closeDrawerSilently();
+    if (st.view && viewName !== st.view) { closeDrawerSilently(); openView(st.view, { noFocus: true }); before = waitFor(st.sel, 5000); }
+    else if (st.sel) before = before.then(function () { return waitFor(st.sel, 600); });
+    before.then(function () {
+      if (!cur) return;
+      var t = st.sel ? $(st.sel) : null; if (t && visible(t) && !st.drawer && !(view && view.contains(t))) { t.scrollIntoView({ block: "center", behavior: "instant" in document.documentElement.style ? "instant" : "auto" }); }
+      else if (t && view && view.contains(t)) t.scrollIntoView({ block: "center" });
+      if (!ringEl) { ringEl = el("div", { id: "snring", "aria-hidden": "true" }); document.body.appendChild(ringEl); }
+      if (cardEl) cardEl.remove();
+      var last = cur.i === cur.steps.length - 1, never = el("input", { type: "checkbox" });
+      cardEl = el("div", { id: "sncard", role: "dialog", "aria-modal": "false", "aria-labelledby": "sncardt" }, [
+        el("span", { "class": "sncnt", text: (cur.tour ? "Tour" : cur.title) + " · " + (cur.i + 1) + " of " + cur.steps.length }),
+        el("b", { id: "sncardt", text: T(st.title) }), el("p", { text: T(st.text) }),
+        cur.tour ? el("label", {}, [never, document.createTextNode(" Don't show this tour again")]) : null,
+        el("div", { "class": "snrowb" }, [el("button", { type: "button", "class": "snskip", text: cur.tour ? "Skip tour" : "Close", onclick: function () { endSteps(never.checked ? "never" : ""); } }),
+          el("span", { "class": "snrowb" }, [cur.i ? el("button", { type: "button", "class": "snbtn2", text: "Back", onclick: function () { cur.i--; showStep(); } }) : null,
+            el("button", { type: "button", "class": "snbtn2 pri", text: last ? "Done" : "Next", onclick: function () { if (last) { endSteps(never.checked ? "never" : "done"); } else { cur.i++; showStep(); } } })])])]);
+      cardEl.addEventListener("keydown", function (e) { if (e.key === "Escape") endSteps(never.checked ? "never" : ""); });
+      document.body.appendChild(cardEl);
+      requestAnimationFrame(function () { mobileFit(t); place(); }); setTimeout(place, 250);
+      var nb = cardEl.querySelectorAll(".snbtn2.pri")[0]; if (nb) nb.focus({ preventScroll: true });
+    });
+  }
+  function run(steps, opts) { if (cur) endSteps(""); closePop(); cur = { steps: steps, i: 0, tour: !!opts.tour, title: opts.title || "" }; window.addEventListener("resize", place); window.addEventListener("scroll", place, true); showStep(); }
+  function startTour(force) {
+    if (P.role === "guest" || !P.uid) return;
+    if (!force) { var s = store.get(tourKey()); if (s === "never" || s === "done") return; try { if (sessionStorage.getItem(tourKey())) return; } catch (e) {} }
+    closeView(); closeDrawerSilently(); run(tourSteps(), { tour: true });
+  }
+  function runGuide(id) {
+    var g = GUIDES.filter(function (x) { return x.id === id; })[0]; if (!g) return;
+    if (g.page !== "any" && g.page !== PAGE) {
+      if (g.page === "review") { var rs = (P.reviews || []).filter(function (r) { return r.audience !== "justin"; }); if (!rs.length) { openView("howto"); msg(viewBody, "Nothing is waiting for your approval right now. When Ski Town Fabricators sends you a review, it shows under Needs my attention in the menu."); return; } location.href = href("review", { job: rs[0].job, guide: id }); return; }
+      location.href = href("cfg", { job: curJob(), guide: id }); return;
+    }
+    run(g.steps.map(function (s) { var o = {}; for (var k in s) o[k] = s[k]; if (g.view && !o.view && !o.drawer) o.view = g.view; return o; }), { title: g.title });
+  }
+
+  /* ---------- start ---------- */
+  var readyRv = null, readyP = new Promise(function (r) { readyRv = r; });
+  window.STFNav = {
+    context: function (o) { setCtx(o); },
+    reviewReady: function () { readyRv(); },
+    openView: openView, closeView: closeView, startTour: startTour, runGuide: runGuide, refresh: refreshNav,
+    viewBody: function () { return viewBody; }
+  };
+  (window.__stfBoot || Promise.resolve(P)).then(function (b) {
+    P = b || P;
+    if (P.role === "guest" || !P.uid) return;
+    var go = function () {
+      buildBar();
+      var waitPage = PAGE === "review" ? readyP : Promise.resolve();
+      waitPage.then(function () {
+        setTimeout(function () {
+          var v = Q.get("view"), g = Q.get("guide");
+          if (g) runGuide(g); else if (v) openView(v, { job: Q.get("job") || "" }); else startTour(false);
+        }, PAGE === "review" ? 400 : 900);
+      });
+    };
+    if (document.body) go(); else document.addEventListener("DOMContentLoaded", go);
+  });
+})();
+</script>
 

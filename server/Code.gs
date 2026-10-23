@@ -1,5 +1,15 @@
 /**
- * STF Portal (Google Apps Script web app) - rev P0.7.1, Oct 22 2026. Owner: FAB - Apps.
+ * STF Portal (Google Apps Script web app) - rev P0.8, Oct 23 2026. Owner: FAB - Apps.
+ *
+ * P0.8: menu + help + sign-off routes (Apps Spec P19).
+ *   - boot gives each person "Needs my attention" items and their new help answers (the pages' menu shows them).
+ *   - help(): "Help: common questions" (STF Portal Help/help.md in Drive), Ask Ski Town Fabricators (help tab + a
+ *     submissions row for FAB - Help), my questions + answers (FAB - Help drops answers/<id>.json in Drive), owner answers.
+ *   - Client signature: per-job STF switch (clientSign, default off) OR the shop manager's own switch on their approval.
+ *     Either on -> the client signs. Both off -> the shop manager's signed approval is enough (client only answers what was passed).
+ *   - The review moves itself: shop approves -> client (when something was passed or a client signature is needed) or
+ *     READY TO SHIP; any change route -> "With STF". Client approves -> READY TO SHIP; client change -> "With STF".
+ *   - New table columns are added automatically on the first call after a new rev (no upgrade() run needed).
  *
  * P0.7: approve mode (Apps Spec P18). A job chat publishes review.json + images to Drive "STF Portal Reviews/<JOB CODE>/".
  *   Justin opens the review per job: off -> shop -> client. The review page (review.html, template A2.10) saves answers,
@@ -22,7 +32,7 @@
  * Nothing here shares a file or folder. Deploying the web app ("Anyone") is Justin's own action.
  */
 
-var REV = 'P0.7.1';
+var REV = 'P0.8';
 var POLL_MAX_OPS = 60;
 var FRONT_URL = 'https://skitownfabricators.github.io/stf-portal/';
 var ROLE_NAMES = { owner: 'Owner', manager: 'Shop manager', crew: 'Shop crew', client: 'Client' };
@@ -46,7 +56,7 @@ var RULES = {
     { path: 'rv/*/p/{self}/**', read: 'self', write: 'self' }
   ]
 };
-var STAGES = { '': 'Review off', shop: 'With the shop', client: 'With the client' };
+var STAGES = { '': 'Review off', shop: 'With the shop', client: 'With the client', stf: 'With STF (changes)', done: 'Approved: ready to ship' };
 
 var CTX = { device: '' }; /* set per request by doPost */
 
@@ -69,7 +79,9 @@ function doPost(e) {
       team: function () { return team(k, a[0], a[1] || {}); },
       upload: function () { return upload(k, a[0], a[1], a[2]); },
       asset: function () { return asset(k, a[0]); },
-      review: function () { return review(k, a[0], a[1] || {}); }
+      review: function () { return review(k, a[0], a[1] || {}); },
+      help: function () { return help(k, a[0], a[1] || {}); },
+      nav: function () { return nav_(whoFromToken_(k)); }
     };
     if (!fns.hasOwnProperty(req.fn)) throw new Error('invalid_argument');
     out = { ok: true, result: fns[req.fn]() };
@@ -99,8 +111,9 @@ function boot_(token, appParam) {
   b.level = who.role === 'crew' ? (who.level || 'questions') : 'requests';
   b.jobs = visibleJobs_(who).map(function (j) { return { code: j.code, title: j.title || '', shop: j.shop, shopName: shopName_(j.shop) }; });
   b.job = b.jobs.length ? b.jobs[0].code : '';
-  b.reviews = jobs_().map(function (j) { var a = reviewAudience_(who, j); return a ? { job: j.code, title: j.title || '', stage: j.review, audience: a } : null; }).filter(Boolean);
+  b.reviews = jobs_().map(function (j) { var a = reviewAudience_(who, j); return a ? { job: j.code, title: j.title || '', stage: j.review, stageName: STAGES[j.review] || '', audience: a } : null; }).filter(Boolean);
   if (who.role === 'crew') b.managers = findLinks_({ role: 'manager', shop: who.shop }).filter(function (l) { return l.active; }).map(function (l) { return l.name; });
+  try { var n = nav_(who); b.attention = n.attention; b.helpNew = n.helpNew; } catch (e) { b.attention = []; b.helpNew = 0; }
   return b;
 }
 
@@ -144,11 +157,12 @@ function ensureTables_(ss) {
   ensureSheet_(ss, 'docs', ['path', 'json', 'updatedAt', 'updatedBy']);
   ensureSheet_(ss, 'links', LINK_COLS);
   ensureSheet_(ss, 'shops', ['id', 'name', 'created', 'active']);
-  ensureSheet_(ss, 'jobs', ['code', 'title', 'shop', 'people', 'sent', 'created', 'updated', 'review']);
+  ensureSheet_(ss, 'jobs', ['code', 'title', 'shop', 'people', 'sent', 'created', 'updated', 'review', 'stageAt', 'clientSeen', 'clientSign', 'shopClientSign']);
   ensureSheet_(ss, 'submissions', ['at', 'app', 'job', 'title', 'from', 'role', 'summary', 'path']);
   ensureSheet_(ss, 'devices', ['hash', 'uid', 'expires', 'created']);
   ensureSheet_(ss, 'codes', ['uid', 'hash', 'expires', 'tries', 'sentAt']);
   ensureSheet_(ss, 'links_history', LINK_COLS.concat(['deletedAt']));
+  ensureSheet_(ss, 'help', HELP_COLS);
 }
 function ensureSheet_(ss, name, header) {
   var sh = ss.getSheetByName(name);
@@ -160,7 +174,9 @@ function ensureSheet_(ss, name, header) {
 function header_(sh) { return sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0].map(String); }
 function ss_() { return SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SS_ID')); }
 var SHEETS_ = {};
+var SCHEMA_OK_ = false;
 function sheet_(name) {
+  if (!SCHEMA_OK_) { SCHEMA_OK_ = true; var pr = PropertiesService.getScriptProperties(); if (pr.getProperty('SCHEMA') !== REV) { ensureTables_(ss_()); pr.setProperty('SCHEMA', REV); } }
   if (!SHEETS_[name]) { var ss = ss_(); var sh = ss.getSheetByName(name); if (!sh) { ensureTables_(ss); sh = ss.getSheetByName(name); } SHEETS_[name] = sh; }
   return SHEETS_[name];
 }
@@ -264,15 +280,18 @@ function code(token, action, args) {
 /* ---------------- shops + jobs ---------------- */
 function shops_() { return rows_('shops').filter(function (s) { return s.active === '' || bool_(s.active); }); }
 function shopName_(id) { var s = rows_('shops').filter(function (x) { return x.id === id; })[0]; return s ? s.name : ''; }
-function jobs_() { return rows_('jobs').map(function (j) { j.code = String(j.code); j.people = list_(j.people); j.sent = bool_(j.sent); j.review = String(j.review || ''); return j; }); }
+function jobs_() { return rows_('jobs').map(function (j) { j.code = String(j.code); j.people = list_(j.people); j.sent = bool_(j.sent); j.review = String(j.review || ''); j.clientSign = bool_(j.clientSign); j.shopClientSign = bool_(j.shopClientSign); j.clientSeen = bool_(j.clientSeen); return j; }); }
+/** Must the client approve and sign this job's review? STF's per-job switch OR the shop manager's own switch. */
+function clientSignNeeded_(j) { return !!(j && (j.clientSign || j.shopClientSign)); }
+function setStage_(j, st) { var c = { review: st, stageAt: new Date().toISOString(), updated: new Date().toISOString() }; if (st === 'client') c.clientSeen = true; if (!st) { c.clientSeen = false; c.shopClientSign = false; } setCells_('jobs', j._row, c); j.review = st; }
 /* Which review audience this person gets for a job right now ('' = none). Manager: from the shop stage on (they keep seeing
    what they sent). Client: client stage. Crew: none (approvals are the shop manager's). Owner: any open review (preview). */
 function reviewAudience_(who, j) {
   if (!j || !j.review) return '';
   if (who.role === 'owner') return 'justin';
   if (!canSeeJob_(who, j.code)) return '';
-  if (who.role === 'manager') return 'shop';
-  if (who.role === 'client' && j.review === 'client') return 'client';
+  if (who.role === 'manager') return 'shop'; /* every open stage; they can only change answers while it's with the shop */
+  if (who.role === 'client' && (j.review === 'client' || (j.clientSeen && (j.review === 'stf' || j.review === 'done')))) return 'client';
   return '';
 }
 /** Jobs this person may see. Owner: all. Manager/client: sent jobs they're on. Crew: sent jobs of their shop their manager turned on. */
@@ -322,7 +341,7 @@ function reviewWritable_(who, path) {
   var m = /^rv\/([^/]+)\//.exec(path); if (!m) return false;
   var j = jobs_().filter(function (x) { return x.code === m[1]; })[0];
   var a = reviewAudience_(who, j);
-  return a === 'client' || (a === 'shop' && j.review === 'shop'); /* the shop can't change answers once the review moved on to the client */
+  return (a === 'client' && j.review === 'client') || (a === 'shop' && j.review === 'shop'); /* answers lock once the review moves on */
 }
 function validPath_(path) { return typeof path === 'string' && /^[A-Za-z0-9_\-.:@+]+(\/[A-Za-z0-9_\-.:@+]+)*$/.test(path) && path.length < 400 && path.split('/').every(function (x) { return x !== '.' && x !== '..'; }); }
 
@@ -442,7 +461,7 @@ function admin(token, action, args) {
   var lock = action === 'list' || action === 'state' ? null : LockService.getScriptLock(); if (lock) lock.waitLock(20000);
   try {
     if (action === 'state') return { shops: shops_().map(function (s) { return { id: s.id, name: s.name }; }), people: findLinks_({}).filter(function (l) { return l.role !== 'owner'; }).map(personOut_),
-      jobs: jobs_().map(function (j) { return { code: j.code, title: j.title, shop: j.shop, people: j.people, sent: j.sent, review: j.review }; }), levels: LEVELS, roles: ROLE_NAMES, stages: STAGES };
+      jobs: jobs_().map(function (j) { return { code: j.code, title: j.title, shop: j.shop, people: j.people, sent: j.sent, review: j.review, stageAt: j.stageAt ? String(j.stageAt) : '', clientSign: j.clientSign, shopClientSign: j.shopClientSign }; }), levels: LEVELS, roles: ROLE_NAMES, stages: STAGES };
     if (action === 'list') return findLinks_({}).map(personOut_);
     if (action === 'addshop') {
       var nm = String(args.name || '').trim().slice(0, 80); if (!nm) throw new Error('invalid_argument');
@@ -504,7 +523,11 @@ function admin(token, action, args) {
       var st = String(args.stage || ''); if (!STAGES.hasOwnProperty(st)) throw new Error('invalid_argument');
       if (st && !jr.sent) throw new Error('not_sent');
       if (st && !reviewJson_(jr.code)) throw new Error('no_review_file');
-      setCells_('jobs', jr._row, { review: st, updated: new Date().toISOString() }); return { ok: true };
+      setStage_(jr, st); return { ok: true };
+    }
+    if (action === 'clientsign') {
+      var jc = jobs_().filter(function (x) { return x.code === String(args.code); })[0]; if (!jc) throw new Error('not_found');
+      setCells_('jobs', jc._row, { clientSign: !!args.on, updated: new Date().toISOString() }); return { ok: true };
     }
     if (action === 'send') {
       var j = jobs_().filter(function (x) { return x.code === String(args.code); })[0]; if (!j) throw new Error('not_found');
@@ -640,6 +663,19 @@ function reviewJson_(job) {
   return JSON.parse(best.getBlob().getDataAsString('UTF-8'));
 }
 /** The latest decisions a shop manager saved on this job's review, as the client page's shopAnswers. */
+/** The shop manager's latest saved placements (size/position/color on a photo) for the client page to start from. */
+function shopPlacements_(job, map) {
+  map = map || readDocs_();
+  var mgrs = findLinks_({ role: 'manager' }).map(function (l) { return l.uid; }), best = {};
+  for (var k in map) {
+    var m = /^rv\/([^/]+)\/p\/([^/]+)\/placements\/([^/]+)$/.exec(k);
+    if (!m || m[1] !== job || mgrs.indexOf(m[2]) < 0) continue;
+    var d = JSON.parse(map[k].json); if (d._deleted) continue;
+    var key = (d.fig || '') + '::' + (d.obj || m[3]);
+    if (!best[key] || d.at > best[key].at) best[key] = { fig: d.fig || '', obj: d.obj || '', xIn: d.xIn, yIn: d.yIn, wIn: d.wIn, hIn: d.hIn, color: d.color || null, changed: !!d.changed, at: d.at };
+  }
+  return Object.keys(best).map(function (k) { return best[k]; });
+}
 function shopAnswers_(job, map) {
   map = map || readDocs_();
   var mgrs = findLinks_({ role: 'manager' }).map(function (l) { return l.uid; });
@@ -669,14 +705,18 @@ function review(token, action, args) {
   var R = reviewJson_(job); if (!R) throw new Error('no_review_file');
   R.audience = aud;
   R.job = R.job || job;
-  if (aud === 'client') R.shopAnswers = shopAnswers_(job);
+  if (aud === 'client') { R.shopAnswers = shopAnswers_(job); R.shopPlacements = shopPlacements_(job); R.clientSignRequired = clientSignNeeded_(j); }
+  if (aud === 'shop') R.stfRequiresClientSign = !!j.clientSign;
+  R.stage = j.review; R.stageName = STAGES[j.review] || j.review;
+  R.viewer = who.role === 'owner' ? 'owner-' + aud : who.uid; /* drafts in the browser are kept per person */
   /* signer name comes from the person's saved profile, never from the page */
   if (aud === 'shop' || aud === 'client') {
     R.signers = (R.signers || []).map(function (s) { if (s.audience === aud && who.role !== 'owner') { s = merge_(s, { name: who.name }); if (aud === 'shop' && who.shop) s.company = s.company || shopName_(who.shop); } return s; });
   }
   R.notifyTrigger = ''; R.artifactUrl = '';
   var images = [], fit = f.getFiles(); while (fit.hasNext()) { var n = fit.next().getName(); if (/\.(png|jpe?g|webp|gif|svg)$/i.test(n)) images.push(n); }
-  return { review: R, images: images, stage: j.review, stageName: STAGES[j.review] || j.review, preview: who.role === 'owner' };
+  var locked = who.role !== 'owner' && !((aud === 'client' && j.review === 'client') || (aud === 'shop' && j.review === 'shop'));
+  return { review: R, images: images, stage: j.review, stageName: STAGES[j.review] || j.review, preview: who.role === 'owner', locked: locked };
 }
 /* A readable "submissions" row for every review Submit (and every "send now" comment), for the chats and the hourly check. */
 function reviewRow_(who, job, uid, kind, data, map) {
@@ -704,13 +744,145 @@ function reviewRow_(who, job, uid, kind, data, map) {
   if (ap) {
     var OL = { approve: 'OUTCOME: APPROVED as shown', change: 'OUTCOME: APPROVED WITH THIS CHANGE: ', notready: 'OUTCOME: NOT READY, needs changes: ',
       toclient: 'OUTCOME: SHOP APPROVED, send the rest to the client', stf_then_shop: 'OUTCOME: SHOP WANTS CHANGES, then back to the shop before the client: ',
-      stf_then_client: 'OUTCOME: SHOP APPROVED WITH CHANGES, then send the rest to the client: ' };
-    L.push((OL[ap.outcome] || ('OUTCOME: ' + ap.outcome + ': ')) + (ap.outcome === 'approve' || ap.outcome === 'toclient' ? '' : (ap.change || '')));
+      stf_then_client: 'OUTCOME: SHOP APPROVED WITH CHANGES, then send the rest to the client: ',
+      answers: 'OUTCOME: CLIENT ANSWERS ARE FINAL (no signature needed on this job)', question: 'OUTCOME: CLIENT HAS A QUESTION OR WANTS A CHANGE: ' };
+    L.push((OL[ap.outcome] || ('OUTCOME: ' + ap.outcome + ': ')) + (ap.outcome === 'approve' || ap.outcome === 'toclient' || ap.outcome === 'answers' ? '' : (ap.change || '')));
+    if (aud === 'shop' && ap.clientSign !== undefined) L.push('Client signature: ' + (ap.clientSign ? 'the shop manager wants the client to approve and sign' : 'not asked for by the shop manager'));
     if (ap.note) L.push('Note for the record: ' + ap.note);
     if (ap.signed) L.push('Signed: ' + (ap.signer && ap.signer.name ? ap.signer.name + ', ' : '') + (ap.signer ? ap.signer.company + ' (' + ap.signer.role + ')' : '') + ', ' + new Date(ap.at).toISOString() + ', via STF portal, ' + (ap.rev || '') + ' (signature saved in the portal: ' + pre + 'approvals/)');
   }
   var TT = { approve: 'Review: APPROVED', change: 'Review: APPROVED with a change', notready: 'Review: NOT READY', toclient: 'Review: APPROVED, send the rest to the client',
-    stf_then_shop: 'Review: CHANGES FIRST, then back to the shop', stf_then_client: 'Review: APPROVED with changes, then the client' };
+    stf_then_shop: 'Review: CHANGES FIRST, then back to the shop', stf_then_client: 'Review: APPROVED with changes, then the client',
+    answers: 'Review: CLIENT ANSWERS IN', question: 'Review: CLIENT QUESTION OR CHANGE' };
   var title = ap ? (TT[ap.outcome] || 'Review: ' + ap.outcome) : 'Review answers';
+  /* P0.8: the review moves itself on. STF only steps in for changes, and gets READY TO SHIP when every needed sign-off is in. */
+  var j = jobs_().filter(function (x) { return x.code === job; })[0], next = '';
+  if (ap && j && who.role !== 'owner') {
+    var o = ap.outcome, nDel = ds.filter(function (d) { return d.choice === 'delegate'; }).length;
+    if (aud === 'shop' && j.review === 'shop') {
+      if (ap.clientSign !== undefined) { setCells_('jobs', j._row, { shopClientSign: !!ap.clientSign }); j.shopClientSign = !!ap.clientSign; }
+      if (o === 'approve' || o === 'toclient') next = (nDel || clientSignNeeded_(j)) ? 'client' : 'done';
+      else next = 'stf';
+    } else if (aud === 'client' && j.review === 'client') next = (o === 'approve' || o === 'answers') ? 'done' : 'stf';
+    if (next) setStage_(j, next);
+  }
+  if (next === 'done') { title = 'Review: READY TO SHIP'; L.push('NEXT: every sign-off this job needs is in' + (clientSignNeeded_(j) ? ' (shop manager + client)' : ' (shop manager; no client signature needed)') + '. Ready to ship.'); }
+  else if (next === 'client') { title = 'Review: SHOP APPROVED, now with the client'; L.push('NEXT: the portal sent the review to the client' + (clientSignNeeded_(j) ? ' (client must approve and sign)' : ' (client answers what was passed to them; no signature needed)') + '. Nothing for STF to do yet.'); }
+  else if (next === 'stf') { title += ' (STF: your move)'; L.push('NEXT: the review is with STF. Make the changes, then use the job\'s Approval buttons to send it ' + (o === 'stf_then_client' ? 'to the client' : o === 'question' ? 'back to the client' : 'back to the shop') + (o === 'change' ? ' (or mark it ready to ship if nobody else has to see the change)' : '') + '.'); }
   sheet_('submissions').appendRow([new Date().toISOString(), 'review', job, title + ' (' + (aud || who.role) + ')', who.name || '', ROLE_NAMES[who.role] || who.role, L.join('\n').slice(0, 45000), pre + 'submissions/']);
+}
+
+
+/* ---------------- menu + help (P0.8) ---------------- */
+var HELP_COLS = ['id', 'at', 'uid', 'name', 'role', 'shop', 'page', 'job', 'question', 'answer', 'answeredBy', 'answeredAt', 'status', 'seen', 'addToFaq'];
+var HELP_SECTIONS = { 'everyone': '*', 'stf': 'owner', 'shop manager': 'manager', 'shop crew': 'crew', 'client': 'client' };
+/* Drive: "STF Portal Help" > help.md (the common questions, written by FAB - Apps, grown by FAB - Help) + answers/<id>.json (FAB - Help's replies). */
+function helpFolder_() {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty('HELP_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  var it = DriveApp.getFoldersByName('STF Portal Help'); var f = it.hasNext() ? it.next() : DriveApp.createFolder('STF Portal Help');
+  props.setProperty('HELP_ID', f.getId()); return f;
+}
+function helpSub_(name) { var f = helpFolder_(), it = f.getFoldersByName(name); return it.hasNext() ? it.next() : f.createFolder(name); }
+/** help.md -> [{id, section, role, q, a}]. "## <who>" starts a section (Everyone | STF | Shop manager | Shop crew | Client), "### <question>" starts an entry. */
+function faq_() {
+  var cache = null; try { cache = CacheService.getScriptCache(); var hit = cache.get('faq_' + REV); if (hit) return JSON.parse(hit); } catch (e) { cache = null; }
+  var it = helpFolder_().getFilesByName('help.md'), best = null;
+  while (it.hasNext()) { var x = it.next(); if (!best || x.getLastUpdated() > best.getLastUpdated()) best = x; }
+  var out = [];
+  if (best) {
+    var sec = 'Everyone', role = '*', cur = null;
+    best.getBlob().getDataAsString('UTF-8').split(/\r?\n/).forEach(function (line) {
+      var m2 = /^##\s+(.+?)\s*$/.exec(line), m3 = /^###\s+(.+?)\s*$/.exec(line);
+      if (m3) { cur = { id: 'q' + out.length, section: sec, role: role, q: m3[1], a: '' }; out.push(cur); return; }
+      if (m2 && !/^###/.test(line)) { sec = m2[1]; role = HELP_SECTIONS[sec.toLowerCase()] || '*'; cur = null; return; }
+      if (cur) cur.a += line + '\n';
+    });
+    out.forEach(function (e) { e.a = e.a.replace(/^\s+|\s+$/g, ''); });
+  }
+  try { if (cache) cache.put('faq_' + REV, JSON.stringify(out), 600); } catch (e) {}
+  return out;
+}
+/* FAB - Help leaves answers/<id>.json ({answer, by, status: "answered" | "to_stf"}); copy any new ones into the help tab. */
+function helpPickup_(rows, limit) {
+  var waiting = rows.filter(function (r) { return r.status === 'new'; }).slice(0, limit || 20); if (!waiting.length) return;
+  var af = helpSub_('answers');
+  waiting.forEach(function (r) {
+    var it = af.getFilesByName(r.id + '.json'); if (!it.hasNext()) return;
+    try {
+      var a = JSON.parse(it.next().getBlob().getDataAsString('UTF-8'));
+      var c = { answer: String(a.answer || '').slice(0, 8000), answeredBy: String(a.by || 'STF Help').slice(0, 80), answeredAt: new Date().toISOString(), status: a.status === 'to_stf' ? 'to_stf' : 'answered', seen: false };
+      setCells_('help', r._row, c); for (var k in c) r[k] = c[k];
+    } catch (e) {}
+  });
+}
+function helpOut_(r) { return { id: r.id, at: String(r.at), name: r.name, role: ROLE_NAMES[r.role] || r.role, page: r.page, job: r.job, question: r.question, answer: r.answer, answeredBy: r.answeredBy, answeredAt: String(r.answeredAt || ''), status: r.status, seen: bool_(r.seen) }; }
+/** help(token, action, args): faq | ask {question, page, job} | mine {seen} | list (owner) | answer (owner) {id, answer, addToFaq} */
+function help(token, action, args) {
+  var w = whoFromToken_(token); if (w.role === 'guest' || w.role === 'locked') throw new Error('permission_denied');
+  args = args || {};
+  if (action === 'faq') return faq_().filter(function (e) { return w.role === 'owner' || e.role === '*' || e.role === w.role; });
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    var rows = rows_('help').map(function (r) { r.id = String(r.id); r.uid = String(r.uid); r.status = String(r.status || 'new'); return r; });
+    if (action === 'ask') {
+      var q = String(args.question || '').trim().slice(0, 4000); if (!q) throw new Error('invalid_argument');
+      var hour = Date.now() - 3600000;
+      if (rows.filter(function (r) { return r.uid === w.uid && Date.parse(r.at) > hour; }).length >= 10) throw new Error('too_many');
+      var job = String(args.job || ''); if (job && !canSeeJob_(w, job)) job = '';
+      var id = 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      appendObj_('help', { id: id, at: new Date().toISOString(), uid: w.uid, name: w.name, role: w.role, shop: w.shop || '', page: String(args.page || '').slice(0, 60), job: job, question: q, status: 'new', seen: false });
+      sheet_('submissions').appendRow([new Date().toISOString(), 'help', job, 'Help question', w.name || '', ROLE_NAMES[w.role] || w.role,
+        'Help id: ' + id + '\nAsked on: ' + String(args.page || '') + (w.shop ? '\nShop: ' + shopName_(w.shop) : '') + '\nQuestion: ' + q, 'help/' + id]);
+      return { id: id };
+    }
+    if (action === 'mine') {
+      var mine = rows.filter(function (r) { return r.uid === w.uid; }); helpPickup_(mine);
+      if (args.seen) mine.forEach(function (r) { if (r.status !== 'new' && !bool_(r.seen)) { setCells_('help', r._row, { seen: true }); } });
+      return mine.reverse().slice(0, 30).map(helpOut_);
+    }
+    if (w.role !== 'owner') throw new Error('permission_denied');
+    if (action === 'list') { helpPickup_(rows, 40); return rows.reverse().slice(0, 100).map(helpOut_); }
+    if (action === 'answer') {
+      var r = rows.filter(function (x) { return x.id === String(args.id); })[0]; if (!r) throw new Error('not_found');
+      var ans = String(args.answer || '').trim().slice(0, 8000); if (!ans) throw new Error('invalid_argument');
+      setCells_('help', r._row, { answer: ans, answeredBy: 'Ski Town Fabricators', answeredAt: new Date().toISOString(), status: 'answered', seen: false, addToFaq: !!args.addToFaq });
+      sheet_('submissions').appendRow([new Date().toISOString(), 'help', r.job || '', 'Help answer from STF' + (args.addToFaq ? ' (add to common questions)' : ''), w.name || '', 'Owner',
+        'Help id: ' + r.id + '\nAsked by: ' + r.name + ' (' + (ROLE_NAMES[r.role] || r.role) + ')\nQuestion: ' + r.question + '\nAnswer: ' + ans, 'help/' + r.id]);
+      return { ok: true };
+    }
+    throw new Error('invalid_argument');
+  } finally { lock.releaseLock(); }
+}
+/** The menu's "Needs my attention" list and new help answers for this person. */
+function nav_(who) {
+  if (!who || who.role === 'guest' || who.role === 'locked') return { attention: [], helpNew: 0 };
+  var map = readDocs_(), att = [];
+  var signedSince = function (j) {
+    var since = Date.parse(j.stageAt || '') || 0, pre = 'rv/' + j.code + '/p/' + who.uid + '/approvals/';
+    for (var k in map) if (k.indexOf(pre) === 0) { var d = JSON.parse(map[k].json); if (!d._deleted && Number(d.at) >= since) return true; }
+    return false;
+  };
+  var js = jobs_();
+  js.forEach(function (j) {
+    var a = reviewAudience_(who, j); if (!a) return;
+    if ((a === 'shop' && j.review === 'shop') || (a === 'client' && j.review === 'client')) { if (!signedSince(j)) att.push({ kind: 'review', job: j.code, title: j.title || '', text: 'Review ready for your approval' }); }
+    if (who.role === 'owner' && j.review === 'stf') att.push({ kind: 'stf', job: j.code, title: j.title || '', text: 'Changes asked for: your move' });
+    if (who.role === 'owner' && j.review === 'done') att.push({ kind: 'ship', job: j.code, title: j.title || '', text: 'Approved: ready to ship' });
+  });
+  if (who.role === 'manager') {
+    var n = 0; findLinks_({ role: 'crew', shop: who.shop }).forEach(function (c) { n += children_(map, 'requests/' + c.uid + '/items').filter(function (it) { return it.data.held; }).length; });
+    if (n) att.push({ kind: 'crew', n: n, view: 'people', text: n + ' crew item' + (n > 1 ? 's' : '') + ' waiting on you' });
+  }
+  var hr = [];
+  try { hr = rows_('help').map(function (r) { r.id = String(r.id); r.uid = String(r.uid); r.status = String(r.status || 'new'); return r; }); } catch (e) {}
+  if (who.role === 'owner') {
+    var nr = 0; for (var k in map) { var m = /^requests\/[^/]+\/items\/[^/]+$/.exec(k); if (m) { var d = JSON.parse(map[k].json); if (!d._deleted && !d.held && (d.status || 'New') === 'New') nr++; } }
+    if (nr) att.push({ kind: 'requests', n: nr, text: nr + ' new change request' + (nr > 1 ? 's' : '') + ' or question' + (nr > 1 ? 's' : '') });
+    var nh = hr.filter(function (r) { return r.status === 'to_stf'; }).length;
+    if (nh) att.push({ kind: 'help', n: nh, view: 'help', text: nh + ' help question' + (nh > 1 ? 's' : '') + ' passed to you' });
+  }
+  var mine = hr.filter(function (r) { return r.uid === who.uid; });
+  try { helpPickup_(mine, 10); } catch (e) {}
+  return { attention: att, helpNew: mine.filter(function (r) { return (r.status === 'answered' || r.status === 'to_stf') && !bool_(r.seen); }).length };
 }

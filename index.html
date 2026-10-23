@@ -847,7 +847,7 @@ function setMode(m){ mode=m; $("m-client").setAttribute("aria-pressed",m==="clie
 $("p-railing").addEventListener("click",()=>setProduct("railing")); $("p-sign").addEventListener("click",()=>setProduct("sign"));
 $("m-client").addEventListener("click",()=>setMode("client")); $("m-shop").addEventListener("click",()=>setMode("shop"));
 $("resetopts").addEventListener("click",()=>{state=defaults(product); notes=[]; renderOpts(); rebuild(); renderChanges(); renderNotes();});
-try{const t=localStorage.getItem("stf-theme-who"); if(t)$("who").value=t;}catch(e){}
+
 
 /* ---------- storage (db) ---------- */
 let db=null, uid=null, owner=false, me=null, role=null, roles={}, U=null; const SHOPNAME="";
@@ -859,9 +859,9 @@ function applyRole(){
     $("whobadge").textContent=role?(((window.STF_PORTAL||{}).roleName||(role==="shop"?"Shop":"Client"))+" · "+nm):(uid?"Not on access list · "+nm:"Preview only"); }
   const canShop=role==="shop"; segShop.disabled=!canShop; segShop.hidden=!canShop&&!!db; if(canShop&&!window.__stfModeSet&&!owner){ window.__stfModeSet=true; setMode("shop"); }
   if(!canShop&&mode==="shop") setMode("client");
-  if(me&&me.name&&!$("who").value) $("who").value=me.name;
+  if(me&&me.name){ $("who").value=me.name; if(!owner){ $("who").readOnly=true; $("who").title="Your name, from your Ski Town Fabricators link"; } }
 }
-async function portalLinks(){ if(window.STFPanel) window.STFPanel.render(); }
+async function portalLinks(){ /* P0.8: People, shops and jobs open from the menu */ }
 async function renderAccess(){
   const ul=$("acclist"); const keys=Object.keys(roles); const ps=U&&keys.length?await U.profiles(keys):{}; ul.innerHTML="";
   if(!keys.length){ul.innerHTML='<li style="border-color:var(--line)"><span></span><span class="empty">No one added yet. Add the client and shop emails above.</span><span></span></li>';}
@@ -922,7 +922,7 @@ $("form").addEventListener("submit",async e=>{
   const req={job:$("job").value.trim(),product,mode,name:$("who").value.trim(),urgency:$("urg").value,message:$("msg").value.trim(),
     changes:ch,notes:notes.map(n=>({part:n.part,text:n.text,pos:n.pos,photos:n.photos||[]})),photos:reqPhotos.slice(),options:Object.assign({},state),status:"New",createdAt:new Date().toISOString(),
     by:{id:uid,role:owner?"owner":((window.STF_PORTAL||{}).role||role)}};
-  try{localStorage.setItem("stf-theme-who",req.name);}catch(err){}
+  
   if(!db||!uid){status("This link can't save requests (preview only). Ask Ski Town Fabricators for your private link.","err");return;}
   if(!owner&&!role){status("This link isn't active. Ask Ski Town Fabricators for a new one.","err");return;}
   $("send").disabled=true;
@@ -945,26 +945,27 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
 
 
 <style>
-#stfpanel{display:grid;gap:14px}
-#stfpanel h3{font:700 13px var(--f-display);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
-#stfpanel .frm{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-#stfpanel .frm input,#stfpanel .frm select,#stfpanel textarea{font:13px var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);flex:1 1 160px;min-width:0}
-#stfpanel textarea{width:100%;min-height:60px;flex-basis:100%}
-#stfpanel .rows{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-#stfpanel .rows>li{display:grid;gap:6px;font-size:13px;border-left:3px solid var(--accent);padding:6px 8px;background:var(--chip);border-radius:0 4px 4px 0}
-#stfpanel .rows>li.off{opacity:.6;border-left-color:var(--line)}
-#stfpanel .top{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-#stfpanel .tag{font:600 11px var(--f-mono);color:var(--muted);text-transform:uppercase}
-#stfpanel .chips{display:flex;flex-wrap:wrap;gap:6px}
-#stfpanel .chip{font:500 12px var(--f-body);border:1px solid var(--line);border-radius:999px;padding:3px 8px;background:var(--panel)}
-#stfpanel .chip button{border:0;background:none;color:var(--muted);cursor:pointer;margin-left:4px;font-size:13px}
-#stfpanel .sent{font:600 11px var(--f-mono);padding:1px 6px;border-radius:3px;background:var(--accent);color:var(--panel)}
-#stfpanel .unsent{font:600 11px var(--f-mono);padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
-#stfpanel .checks{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;flex-basis:100%}
-#stfpanel .sum{white-space:pre-wrap;font-size:12px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
+.stfpanel{display:grid;gap:14px}
+.stfpanel h3{font:700 13px var(--f-display);letter-spacing:.06em;text-transform:uppercase;margin:6px 0 0}
+.stfpanel .frm{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.stfpanel .frm input,.stfpanel .frm select,.stfpanel textarea{font:13px var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);flex:1 1 160px;min-width:0}
+.stfpanel textarea{width:100%;min-height:60px;flex-basis:100%}
+.stfpanel .rows{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.stfpanel .rows>li{display:grid;gap:6px;font-size:13px;border-left:3px solid var(--accent);padding:6px 8px;background:var(--chip);border-radius:0 4px 4px 0}
+.stfpanel .rows>li.off{opacity:.6;border-left-color:var(--line)}
+.stfpanel .top{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.stfpanel .tag{font:600 11px var(--f-mono);color:var(--muted);text-transform:uppercase}
+.stfpanel .chips{display:flex;flex-wrap:wrap;gap:6px}
+.stfpanel .chip{font:500 12px var(--f-body);border:1px solid var(--line);border-radius:999px;padding:3px 8px;background:var(--panel)}
+.stfpanel .chip button{border:0;background:none;color:var(--muted);cursor:pointer;margin-left:4px;font-size:13px}
+.stfpanel .sent{font:600 11px var(--f-mono);padding:1px 6px;border-radius:3px;background:var(--accent);color:var(--panel)}
+.stfpanel .unsent{font:600 11px var(--f-mono);padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted)}
+.stfpanel .checks{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;flex-basis:100%}
+.stfpanel .sum{white-space:pre-wrap;font-size:12px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:6px 8px}
 </style>
 <script>
-/* STF Portal panels (rev P0.6): the owner's People, shops and jobs; the shop manager's crew; job picker; role wording. */
+/* STF Portal panels (rev P0.8): the owner's People, shops and jobs and the shop manager's crew, drawn inside the menu's full-page view
+   (Menu > People, shops and jobs | My crew); job picker; role wording. */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var P = window.STF_PORTAL || {};
@@ -985,7 +986,8 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     already_decided: "Already decided.", not_sent: "Send the job to the portal first.",
     no_review_file: "The job chat hasn't published this review yet (Drive > STF Portal Reviews > the job code > review.json).", not_found: "Not found (maybe someone changed it). Reload.", permission_denied: "Not allowed." };
   var fail = function (e) { var c = (e && (e.message || e.code)) || ""; say(ERR[c] || ("Couldn't save (" + c + ")."), "err"); };
-  var section = function () { var s = $("accesssec"); s.hidden = false; var p = $("stfpanel"); p.innerHTML = ""; return p; };
+  var BOX = null, FOCUSJOB = "";
+  var section = function () { var p = BOX || $("stfpanel"); if (!BOX) { var s = $("accesssec"); if (s) s.hidden = false; } p.innerHTML = ""; p.id = p.id || "stfpanelv"; p.classList.add("stfpanel"); return p; };
   var addMsg = function (p) { var m = el("div", { id: "stfmsg", "class": "status", role: "status" }); m.hidden = true; p.appendChild(m);
     if (LAST && Date.now() - LAST.at < 8000) { m.hidden = false; m.className = "status " + (LAST.kind || ""); m.textContent = LAST.m; } };
 
@@ -993,10 +995,13 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
   function reviewBar() {
     var rs = (P.reviews || []).filter(function (r) { return r.audience !== "justin"; });
     if (!rs.length || $("stfrevbar")) return;
+    rs = rs.filter(function (r) { return r.stage === r.audience || (r.audience === "shop" && r.stage === "shop"); });
+    var att = (P.attention || []).filter(function (a) { return a.kind === "review"; }).map(function (a) { return a.job; });
+    rs = rs.filter(function (r) { return att.indexOf(r.job) >= 0; }); if (!rs.length) return;
     var b = el("div", { id: "stfrevbar", role: "status" }); b.style.cssText = "display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 16px;background:var(--accent,#2b4a6f);color:#fff;font:600 14px var(--f-body,system-ui)";
     b.appendChild(el("span", { text: rs.length === 1 ? "Ready for your approval: " + rs[0].job + (rs[0].title ? " · " + rs[0].title : "") : rs.length + " reviews are ready for your approval" }));
     var a = el("a", { href: "review.html?k=" + encodeURIComponent(P.token || "") + (rs.length === 1 ? "&job=" + encodeURIComponent(rs[0].job) : ""), text: "Open review →" }); a.style.cssText = "color:#fff;text-decoration:underline";
-    b.appendChild(a); document.body.insertBefore(b, document.body.firstChild);
+    b.appendChild(a); var nb = $("snbar"); if (nb && nb.nextSibling) document.body.insertBefore(b, nb.nextSibling); else document.body.insertBefore(b, document.body.firstChild);
   }
   function jobPicker() {
     var job = $("job"); if (!job || P.owner) return;
@@ -1007,11 +1012,13 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
       say(P.role === "crew" ? "Your shop manager hasn't turned on a job for you yet. You can still look around." : "No jobs have been sent to your portal yet. Ski Town Fabricators will let you know when one is ready.", "err");
       return;
     }
-    job.value = js[0].code;
+    var want = new URLSearchParams(location.search).get("job");
+    job.value = js.some(function (j) { return j.code === want; }) ? want : js[0].code;
+    if (window.STFNav) window.STFNav.context();
     if (js.length > 1) {
       var s = el("select", { id: "jobpick", "aria-label": "Job" }); s.style.cssText = "font:13px var(--f-mono);margin-left:6px";
-      js.forEach(function (j) { s.appendChild(opt(j.code, j.code + (j.title ? " · " + j.title : ""))); });
-      s.addEventListener("change", function () { job.value = s.value; });
+      js.forEach(function (j) { s.appendChild(opt(j.code, j.code + (j.title ? " · " + j.title : ""), j.code === job.value)); });
+      s.addEventListener("change", function () { job.value = s.value; if (window.STFNav) window.STFNav.context(); });
       job.parentNode.appendChild(s); job.style.display = "none";
     }
     if (P.role === "crew") {
@@ -1032,7 +1039,7 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
   function person(uid) { return (S.people || []).filter(function (x) { return x.uid === uid; })[0]; }
   function drawOwner() {
     var p = section();
-    p.appendChild(el("h2", { text: "People, shops and jobs" })); addMsg(p);
+    addMsg(p);
     p.appendChild(el("p", { "class": "note", text: "Save each person once with their email. Each gets one link for good: the first time they open it on a phone or computer, the portal emails them a 6-digit code. Jobs show in their portal only after you press Send to portal. Shops are walled off: a job only takes its own shop's people. Shop managers add their own crew." }));
     // shops
     p.appendChild(el("h3", { text: "Shops" }));
@@ -1043,19 +1050,21 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     p.appendChild(el("form", { "class": "frm", onsubmit: function (ev) { ev.preventDefault(); if (!sIn.value.trim()) return; run("admin", ["addshop", { name: sIn.value.trim() }]).then(function () { say("Shop added.", "ok"); owner(); }, fail); } }, [sIn, el("button", { type: "submit", "class": "btn", text: "Add shop" })]));
     // people
     p.appendChild(el("h3", { text: "People" }));
-    p.appendChild(personForm(null));
-    var ul = el("ul", { "class": "rows" });
+    var pf0 = personForm(null); pf0.setAttribute("data-tour", "person-form"); p.appendChild(pf0);
+    var ul = el("ul", { "class": "rows", "data-tour": "people" });
     var ppl = (S.people || []).slice().sort(function (a, b) { return (b.active - a.active) || (shopName(a.shop) || "~").localeCompare(shopName(b.shop) || "~") || a.role.localeCompare(b.role) || a.name.localeCompare(b.name); });
     if (!ppl.length) ul.appendChild(el("li", {}, [el("span", { "class": "note", text: "No one saved yet." })]));
     ppl.forEach(function (x) { ul.appendChild(personRow(x)); });
     p.appendChild(ul);
     // jobs
     p.appendChild(el("h3", { text: "Jobs" }));
-    p.appendChild(jobForm(null));
-    var jl = el("ul", { "class": "rows" });
+    p.appendChild(el("p", { "class": "note", text: "Approval: press Send review to shop. When the shop manager signs, the portal moves it on by itself: to the client if they passed anything or the client must sign, otherwise it's approved and ready to ship. You only step in for changes." }));
+    var jf0 = jobForm(null); jf0.setAttribute("data-tour", "job-form"); p.appendChild(jf0);
+    var jl = el("ul", { "class": "rows", "data-tour": "jobs" });
     if (!(S.jobs || []).length) jl.appendChild(el("li", {}, [el("span", { "class": "note", text: "No jobs yet." })]));
     (S.jobs || []).forEach(function (j) { jl.appendChild(jobRow(j)); });
     p.appendChild(jl);
+    if (FOCUSJOB) { var hit = p.querySelector('[data-job="' + FOCUSJOB.replace(/"/g, "") + '"]'); FOCUSJOB = ""; if (hit) { hit.style.outline = "3px solid #ffb020"; setTimeout(function () { hit.scrollIntoView({ block: "center" }); }, 50); } }
   }
   function personForm(x, done) {
     var n = el("input", { placeholder: "Name", "aria-label": "Name", required: "" }), em = el("input", { type: "email", placeholder: "Email (they get a code here)", "aria-label": "Email", required: "" });
@@ -1112,7 +1121,7 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     return f;
   }
   function jobRow(j) {
-    var li = el("li");
+    var li = el("li", { "data-job": j.code });
     var show = function () {
       li.innerHTML = "";
       var names = j.people.map(function (u) { var x = person(u); return x ? x.name : null; }).filter(Boolean).join(", ") || "nobody yet";
@@ -1121,13 +1130,18 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
                : btn("Send to portal", function () { run("admin", ["send", { code: j.code, sent: true }]).then(function () { say(j.code + " is now in " + names + "'s portal.", "ok"); owner(); }, fail); }, true),
         btn("Edit", function () { li.innerHTML = ""; li.appendChild(jobForm(j, show)); })]));
       var stage = j.review || "", st = function (v, msg) { return function () { run("admin", ["stage", { code: j.code, stage: v }]).then(function () { say(msg, "ok"); owner(); }, fail); }; };
-      var prev = function (as) { var a = el("a", { href: "review.html?k=" + encodeURIComponent((window.STF_PORTAL || {}).token || "") + "&job=" + encodeURIComponent(j.code) + "&as=" + as, target: "_blank", rel: "noopener", "class": "btn", text: "Preview as " + as }); return a; };
+      var prev = function (as) { return el("a", { href: "review.html?k=" + encodeURIComponent((window.STF_PORTAL || {}).token || "") + "&job=" + encodeURIComponent(j.code) + "&as=" + as, target: "_blank", rel: "noopener", "class": "btn", text: "Preview as " + as }); };
       var rr = el("div", { "class": "top" }, [el("span", { "class": "tag", text: "Approval: " + ((S.stages || {})[stage] || "Review off") })]);
-      if (!stage) rr.appendChild(btn("Send review to shop", st("shop", "Review is with the shop manager now. They'll see it in their portal."), true));
-      if (stage === "shop") { rr.appendChild(btn("Send review to client", st("client", "Review is with the client now. The shop's answers are locked."), true)); }
+      if (!stage) rr.appendChild(btn("Send review to shop", st("shop", "Review is with the shop manager now. It shows under Needs my attention in their menu."), true));
+      if (stage === "shop") rr.appendChild(btn("Skip to the client", st("client", "Review is with the client now. The shop's answers are locked.")));
       if (stage === "client") rr.appendChild(btn("Back to shop", st("shop", "Review is back with the shop.")));
+      if (stage === "stf") { rr.appendChild(btn("Send back to shop", st("shop", "Back with the shop manager."), true)); rr.appendChild(btn("Send to client", st("client", "With the client now."))); rr.appendChild(btn("Mark ready to ship", st("done", "Marked approved and ready to ship."))); }
+      if (stage === "done") rr.appendChild(btn("Reopen with the shop", st("shop", "Reopened with the shop manager.")));
       if (stage) { rr.appendChild(btn("Close review", st("", "Review closed."))); rr.appendChild(prev("shop")); rr.appendChild(prev("client")); }
-      if (j.sent) li.appendChild(rr);
+      var cs = el("input", { type: "checkbox", "aria-label": "Client must approve and sign" }); cs.checked = !!j.clientSign;
+      cs.addEventListener("change", function () { run("admin", ["clientsign", { code: j.code, on: cs.checked }]).then(function () { say(cs.checked ? j.code + ": the client must approve and sign." : j.code + ": client signature is the shop manager's choice.", "ok"); owner(); }, fail); });
+      var csl = el("label", { "class": "checks" }, [cs, document.createTextNode(" Client must approve and sign (STF requires it). Off = the shop manager's choice" + (j.shopClientSign ? "; the shop manager asked for it this round." : "."))]);
+      if (j.sent) { li.appendChild(rr); li.appendChild(csl); }
     };
     show(); return li;
   }
@@ -1137,11 +1151,11 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
   function manager() { run("team", ["list", {}]).then(function (t) { T = t; drawTeam(); }, function () { var p = section(); p.appendChild(el("p", { "class": "note", text: "Couldn't load your crew. Reload the page." })); }); }
   function drawTeam() {
     var p = section();
-    p.appendChild(el("h2", { text: "My crew · " + (T.shopName || "") })); addMsg(p);
+    p.appendChild(el("p", { "class": "note", text: T.shopName || "" })); addMsg(p);
     p.appendChild(el("p", { "class": "note", text: "Add your crew and pick what each can do. Crew see nothing until you turn a job on for them; then they see the Shop view. Their questions and change requests come to you first, and only what you approve goes to Ski Town Fabricators." }));
     // waiting
     p.appendChild(el("h3", { text: "Waiting on you" + (T.waiting.length ? " (" + T.waiting.length + ")" : "") }));
-    var wl = el("ul", { "class": "rows" });
+    var wl = el("ul", { "class": "rows", "data-tour": "waiting" });
     if (!T.waiting.length) wl.appendChild(el("li", {}, [el("span", { "class": "note", text: "Nothing waiting." })]));
     T.waiting.forEach(function (w) {
       var note = el("input", { placeholder: "Note to STF or your crew (optional)", "aria-label": "Note" });
@@ -1153,8 +1167,8 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     p.appendChild(wl);
     // crew
     p.appendChild(el("h3", { text: "Crew" }));
-    p.appendChild(crewForm(null));
-    var cl = el("ul", { "class": "rows" });
+    var cf0 = crewForm(null); cf0.setAttribute("data-tour", "crew-form"); p.appendChild(cf0);
+    var cl = el("ul", { "class": "rows", "data-tour": "crew-list" });
     if (!T.crew.length) cl.appendChild(el("li", {}, [el("span", { "class": "note", text: "No crew yet." })]));
     T.crew.slice().sort(function (a, b) { return (b.active - a.active) || a.name.localeCompare(b.name); }).forEach(function (c) { cl.appendChild(crewRow(c)); });
     p.appendChild(cl);
@@ -1163,7 +1177,7 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     p.appendChild(el("p", { "class": "note", text: "For anything not in the menu above (for example letting someone approve, see pricing or skip your sign-off). Crew can never have more than you." }));
     var who = el("select", { "aria-label": "About" }, [opt("", "About my whole crew")].concat(T.crew.map(function (c) { return opt(c.uid, "About " + c.name); })));
     var txt = el("textarea", { placeholder: "What would you like to change, and why?", "aria-label": "Permission request" });
-    var pf = el("form", { "class": "frm" }, [who, txt, el("button", { type: "submit", "class": "btn", text: "Send request to STF" })]);
+    var pf = el("form", { "class": "frm", "data-tour": "permreq" }, [who, txt, el("button", { type: "submit", "class": "btn", text: "Send request to STF" })]);
     pf.addEventListener("submit", function (ev) { ev.preventDefault(); if (!txt.value.trim()) return; run("team", ["permreq", { text: txt.value, crew: who.value }]).then(function () { txt.value = ""; say("Sent. Ski Town Fabricators will get back to you.", "ok"); }, fail); });
     p.appendChild(pf);
   }
@@ -1193,11 +1207,506 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     show(); return li;
   }
 
-  window.STFPanel = { render: function () { P = window.STF_PORTAL || {}; if (P.owner) owner(); else if (P.role === "manager") manager(); } };
+  window.STFPanel = {
+    people: function (box, o) { P = window.STF_PORTAL || {}; BOX = box; FOCUSJOB = (o && o.job) || ""; if (P.owner) owner(); else if (P.role === "manager") manager(); else box.appendChild(el("p", { "class": "note", text: "Nothing to manage here." })); },
+    render: function () { if (window.STFNav) window.STFNav.openView("people"); }
+  };
   (window.__stfBoot || Promise.resolve(P)).then(function (b) {
     P = b || P;
-    var go = function () { reviewBar(); jobPicker(); if (P.role === "manager") manager(); };
+    var go = function () { reviewBar(); jobPicker(); };
     if (document.readyState === "complete") setTimeout(go, 50); else window.addEventListener("load", function () { setTimeout(go, 50); });
+  });
+})();
+</script>
+
+<style>
+/* STF Portal menu + help (rev P0.8). Own colors so it looks the same on every page. */
+#snbar,#sndrawer,#snview,#sncard,#snq,#snpop{--sn-bg:#16181d;--sn-fg:#fff;--sn-panel:#fff;--sn-ink:#16181d;--sn-muted:#5b616b;--sn-line:#d6d9de;--sn-acc:#2348c4;--sn-soft:#eef1f6;--sn-warn:#b4231a;
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;box-sizing:border-box}
+@media (prefers-color-scheme: dark){#sndrawer,#snview,#sncard,#snpop{--sn-panel:#1d2026;--sn-ink:#e8eaed;--sn-muted:#a3a9b2;--sn-line:#353a43;--sn-acc:#8fa8ff;--sn-soft:#262a32}}
+#snbar *,#sndrawer *,#snview *,#sncard *,#snpop *{box-sizing:border-box}
+#snbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--sn-bg);color:var(--sn-fg);padding:6px 12px;margin:-16px -16px 12px;position:sticky;top:0;z-index:800}
+body.sn-review #snbar{margin:0}
+#snbar .snbtn{display:inline-flex;align-items:center;gap:8px;font:600 15px system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;background:transparent;border:1px solid rgba(255,255,255,.35);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:40px}
+#snbar .snbtn:focus-visible,#sndrawer button:focus-visible,#sndrawer a:focus-visible,#snview button:focus-visible,#snq:focus-visible,#sncard button:focus-visible{outline:3px solid #8fa8ff;outline-offset:2px}
+.snham{width:18px;height:12px;display:inline-grid;align-content:space-between}.snham i{display:block;height:2px;background:currentColor;border-radius:2px}
+.snbadge{min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#e0412f;color:#fff;font:700 12px/20px system-ui;text-align:center}
+#snbar .sntitle{font-weight:700;letter-spacing:.04em;font-size:14px}
+#snbar .snctx{font-size:13px;opacity:.85;flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#snbar .snwho{font-size:13px;opacity:.85}
+#snbar .snpv{background:#c0392b;border-radius:4px;padding:2px 8px;font-weight:600;font-size:13px}
+#snbar a{color:#fff}
+#snshade{position:fixed;inset:0;background:rgba(10,12,16,.5);z-index:900}
+#sndrawer{position:fixed;top:0;left:0;bottom:0;width:min(360px,92vw);background:var(--sn-panel);color:var(--sn-ink);z-index:901;overflow-y:auto;box-shadow:4px 0 24px rgba(0,0,0,.3);display:flex;flex-direction:column}
+#sndrawer .snhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--sn-line)}
+#sndrawer .snhead b{display:block;font-size:16px}#sndrawer .snhead span{font-size:13px;color:var(--sn-muted)}
+.snx{border:1px solid var(--sn-line);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;min-width:40px;min-height:40px;font-size:18px;cursor:pointer}
+#sndrawer h4{margin:0;padding:14px 16px 6px;font:700 12px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sn-muted);display:flex;align-items:center;gap:8px}
+#sndrawer ul{list-style:none;margin:0;padding:0 8px 6px}
+#sndrawer li>a,#sndrawer li>button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:15px system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--sn-ink);background:none;border:0;border-radius:8px;padding:10px;min-height:44px;cursor:pointer;text-decoration:none}
+#sndrawer li>a:hover,#sndrawer li>button:hover{background:var(--sn-soft)}
+#sndrawer li>[aria-disabled="true"]{color:var(--sn-muted);cursor:default}#sndrawer li>[aria-disabled="true"]:hover{background:none}
+#sndrawer .snsub{padding-left:22px}
+#sndrawer .snmeta{margin-left:auto;font-size:12px;color:var(--sn-muted);white-space:nowrap}
+#sndrawer .snsoon{margin-left:auto;font:600 11px system-ui;border:1px solid var(--sn-line);border-radius:999px;padding:1px 8px;color:var(--sn-muted)}
+#sndrawer .snnone{padding:6px 10px 10px;font-size:14px;color:var(--sn-muted)}
+#sndrawer .snfoot{margin-top:auto;padding:12px 16px;font-size:12px;color:var(--sn-muted);border-top:1px solid var(--sn-line)}
+.sndotr{width:9px;height:9px;border-radius:50%;background:#e0412f;display:inline-block}
+#snview{position:fixed;inset:0;z-index:850;background:var(--sn-panel);color:var(--sn-ink);overflow-y:auto}
+#snview .snvhead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--sn-bg);color:#fff}
+#snview .snvhead h2{margin:0;font:700 16px system-ui;letter-spacing:.03em;flex:1}
+#snview .snvhead button{color:#fff;background:transparent;border:1px solid rgba(255,255,255,.35);border-radius:8px;min-height:40px;padding:0 12px;font:600 14px system-ui;cursor:pointer}
+#snview .snvbody{max-width:880px;margin:0 auto;padding:16px 16px 60px;display:grid;gap:12px}
+#snview .snvbody p{margin:0}
+.snnote{color:var(--sn-muted);font-size:14px}
+.snbtn2{font:600 14px system-ui;border:1px solid var(--sn-ink);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;padding:9px 14px;cursor:pointer;min-height:42px}
+.snbtn2.pri{background:var(--sn-ink);color:var(--sn-panel)}
+.snbtn2:disabled{opacity:.5;cursor:not-allowed}
+#snview textarea,#snview input[type=search]{width:100%;font:15px system-ui;padding:10px;border:1px solid var(--sn-line);border-radius:8px;background:var(--sn-panel);color:var(--sn-ink)}
+#snview textarea{min-height:110px}
+#snview details{border:1px solid var(--sn-line);border-radius:8px;padding:0 12px}
+#snview details>summary{cursor:pointer;padding:12px 0;font-weight:600;list-style-position:outside}
+#snview details .sna{padding:0 0 12px;display:grid;gap:8px}
+#snview details .sna ol,#snview details .sna ul{margin:0;padding-left:22px;display:grid;gap:4px}
+#snview h3{margin:10px 0 0;font:700 13px system-ui;letter-spacing:.06em;text-transform:uppercase;color:var(--sn-muted)}
+.snqa{border-left:3px solid var(--sn-acc);background:var(--sn-soft);border-radius:0 8px 8px 0;padding:10px 12px;display:grid;gap:6px}
+.snqa .snqm{font-size:12px;color:var(--sn-muted)}
+.snqa.wait{border-left-color:var(--sn-line)}
+.snmsg{font-size:14px;padding:8px 10px;border-radius:6px;background:var(--sn-soft)}.snmsg.err{color:var(--sn-warn)}
+.snrowb{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sngrid{display:grid;gap:8px}
+.sngrid>button{display:flex;justify-content:space-between;align-items:center;text-align:left;font:15px system-ui;border:1px solid var(--sn-line);background:var(--sn-panel);color:var(--sn-ink);border-radius:8px;padding:12px;cursor:pointer;min-height:48px}
+.sngrid>button:hover{background:var(--sn-soft)}
+#snq{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:840;width:52px;height:52px;border-radius:50%;border:0;background:#16181d;color:#fff;font:700 24px system-ui;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer}
+#snq .sndotr{position:absolute;top:4px;right:4px;border:2px solid #fff;width:13px;height:13px}
+#snpop{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:78px;z-index:841;width:min(300px,calc(100vw - 32px));background:var(--sn-panel);color:var(--sn-ink);border:1px solid var(--sn-line);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.3);padding:8px}
+#snpop b{display:block;padding:8px 10px 4px;font-size:13px;color:var(--sn-muted);letter-spacing:.06em;text-transform:uppercase}
+#snpop button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;font:15px system-ui;color:var(--sn-ink);background:none;border:0;border-radius:8px;padding:10px;min-height:44px;cursor:pointer}
+#snpop button:hover{background:var(--sn-soft)}
+#snring{position:fixed;z-index:950;border:3px solid #ffb020;border-radius:10px;box-shadow:0 0 0 9999px rgba(10,12,16,.45);pointer-events:none;transition:all .15s}
+#snring.none{border:0;box-shadow:0 0 0 9999px rgba(10,12,16,.45);width:0;height:0;left:50%;top:50%}
+#sncard{position:fixed;z-index:951;width:min(380px,calc(100vw - 32px));background:var(--sn-panel);color:var(--sn-ink);border-radius:12px;box-shadow:0 10px 36px rgba(0,0,0,.4);padding:16px;display:grid;gap:10px}
+#sncard .sncnt{font-size:12px;color:var(--sn-muted)}
+#sncard b{font-size:17px}
+#sncard p{margin:0}
+#sncard label{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--sn-muted)}
+#sncard label input{width:18px;height:18px}
+#sncard .snrowb{justify-content:space-between}
+#sncard .snskip{background:none;border:0;color:var(--sn-muted);text-decoration:underline;font:14px system-ui;cursor:pointer;padding:6px 0}
+@media (max-width:600px){#snbar .sntitle,#snbar .snwho{display:none}#snbar .snctx{flex-basis:0;font-size:12px}}
+@media (max-width:600px){#sncard{left:16px!important;right:16px;bottom:16px;top:auto!important;width:auto;transform:none!important}}
+</style>
+<script>
+/* STF Portal menu + help (rev P0.8, Apps Spec P19).
+   - A bar on every page with the Menu: Needs my attention, Jobs (job -> its parts), People / My crew, Help.
+   - Help: a short tour per role and page (on by default, skippable, "Don't show this again"), "Show me how to..." guides,
+     Common questions (Drive: STF Portal Help/help.md), Ask Ski Town Fabricators (answered by FAB - Help or Justin), My questions.
+   - After the tour, help stays one tap away under the ? button in the corner. */
+(function () {
+  var P = window.STF_PORTAL || {};
+  var PAGE = window.STF_APP === "review" ? "review" : "cfg";
+  var Q = new URLSearchParams(location.search);
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var el = function (tag, attrs, kids) { var e = document.createElement(tag); for (var k in (attrs || {})) { var v = attrs[k]; if (v == null || v === false) continue; if (k === "text") e.textContent = v; else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v); } (kids || []).forEach(function (c) { if (c) e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); }); return e; };
+  var call = function (fn, args) { return window.claude.portal.call(fn, args); };
+  var href = function (page, extra) { var u = new URLSearchParams(); if (P.token) u.set("k", P.token); for (var k in (extra || {})) if (extra[k]) u.set(k, extra[k]); var s = u.toString(); return (page === "review" ? "review.html" : "./") + (s ? "?" + s : ""); };
+  var first = function () { return String(P.name || "").split(/[\s(]/)[0] || "there"; };
+  var curJob = function () { if (PAGE === "review") return P.reviewJob || Q.get("job") || ""; var j = document.getElementById("job"); return (j && j.value) || Q.get("job") || ""; };
+  var store = { get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  var role = function () { return P.owner ? "owner" : P.role; };
+  var isShopSide = function () { return role() === "owner" || role() === "manager" || role() === "crew"; };
+  var managers = function () { return (P.managers || []).join(" / ") || "your shop manager"; };
+
+  /* ---------- bar ---------- */
+  var bar, menuBtn, badge, ctx, qBtn, qDot;
+  function buildBar() {
+    if (PAGE === "review") document.body.classList.add("sn-review");
+    badge = el("span", { "class": "snbadge", hidden: true });
+    menuBtn = el("button", { type: "button", "class": "snbtn", id: "snmenu", "aria-haspopup": "dialog", "aria-expanded": "false", onclick: function () { openDrawer(); } },
+      [el("span", { "class": "snham", "aria-hidden": "true" }, [el("i"), el("i"), el("i")]), el("span", { text: "Menu" }), badge]);
+    ctx = el("span", { "class": "snctx" });
+    bar = el("header", { id: "snbar" }, [menuBtn, el("span", { "class": "sntitle", text: "SKI TOWN FABRICATORS" }), ctx,
+      el("span", { "class": "snwho", text: (P.name || "") + (P.roleName ? " · " + P.roleName : "") })]);
+    document.body.insertBefore(bar, document.body.firstChild);
+    qDot = el("span", { "class": "sndotr", hidden: true });
+    qBtn = el("button", { type: "button", id: "snq", "aria-label": "Help", "aria-haspopup": "menu", onclick: togglePop }, [document.createTextNode("?"), qDot]);
+    document.body.appendChild(qBtn);
+    setCtx();
+    paintBadges();
+  }
+  function setCtx(extra) {
+    if (!ctx) return; ctx.innerHTML = "";
+    var j = curJob(), jt = ((P.jobs || []).filter(function (x) { return x.code === j; })[0] || {}).title || "";
+    ctx.appendChild(document.createTextNode((PAGE === "review" ? "Review · " : "Configurator · ") + (j || "no job") + (jt ? " · " + jt : "")));
+    if (extra && extra.preview) {
+      ctx.appendChild(document.createTextNode(" "));
+      ctx.appendChild(el("span", { "class": "snpv", text: "PREVIEW as " + extra.as + " · nothing is saved" }));
+      ["shop", "client"].forEach(function (x) { if (x !== extra.as) { ctx.appendChild(document.createTextNode(" ")); ctx.appendChild(el("a", { href: href("review", { job: j, as: x }), text: "Preview as " + x })); } });
+    }
+    if (extra && extra.locked) { ctx.appendChild(document.createTextNode(" ")); ctx.appendChild(el("span", { "class": "snpv", style: "background:#555", text: "Read only · " + (extra.stageName || "moved on") })); }
+  }
+  function attnCount() { return (P.attention || []).length; }
+  function paintBadges() {
+    var n = attnCount() + (P.helpNew ? 1 : 0);
+    if (badge) { badge.hidden = !n; badge.textContent = n; badge.setAttribute("aria-label", n + " waiting"); }
+    if (qDot) qDot.hidden = !P.helpNew;
+  }
+  function refreshNav() { return call("nav", []).then(function (n) { P.attention = n.attention; P.helpNew = n.helpNew; paintBadges(); }, function () {}); }
+
+  /* ---------- drawer ---------- */
+  var shade, drawer, openJob = null;
+  function closeDrawer() { if (shade) shade.remove(); if (drawer) drawer.remove(); shade = drawer = null; if (menuBtn) { menuBtn.setAttribute("aria-expanded", "false"); menuBtn.focus(); } }
+  function item(text, opts) {
+    opts = opts || {};
+    var kids = [document.createTextNode(text)];
+    if (opts.meta) kids.push(el("span", { "class": "snmeta", text: opts.meta }));
+    if (opts.soon) kids.push(el("span", { "class": "snsoon", text: "coming soon" }));
+    if (opts.dot) kids.push(el("span", { "class": "sndotr", "aria-label": "new" }));
+    var n;
+    if (opts.soon) n = el("button", { type: "button", "aria-disabled": "true", title: opts.soon === true ? "Comes with the Shop Floor app" : opts.soon }, kids);
+    else if (opts.href) n = el("a", { href: opts.href }, kids);
+    else n = el("button", { type: "button", onclick: function () { closeDrawer(); opts.go(); } }, kids);
+    return el("li", { "class": opts.sub ? "snsub" : null }, [n]);
+  }
+  function attnItem(a) {
+    if (a.kind === "review") return item(a.text + " · " + a.job, { href: href("review", { job: a.job }) });
+    if (a.kind === "stf" || a.kind === "ship") return item(a.text + " · " + a.job, { go: function () { openView("people", { job: a.job }); } });
+    if (a.kind === "crew") return item(a.text, { go: function () { openView("people"); } });
+    if (a.kind === "help") return item(a.text, { go: function () { openView("helpadmin"); } });
+    if (a.kind === "requests") return item(a.text, { href: PAGE === "cfg" ? "#logtitle" : href("cfg", {}) + "#logtitle" });
+    return item(a.text || "", { go: function () {} });
+  }
+  function jobParts(j) {
+    var ul = el("ul", { "class": "snparts" });
+    var rv = (P.reviews || []).filter(function (r) { return r.job === j.code && r.audience !== "justin"; })[0];
+    var rvOwner = role() === "owner" && (P.reviews || []).some(function (r) { return r.job === j.code; });
+    ul.appendChild(item("Job overview", { sub: true, go: function () { openView("job", { job: j.code }); } }));
+    if (rv) ul.appendChild(item("Review & approval", { sub: true, href: href("review", { job: j.code }), meta: rv.stageName || "" }));
+    if (rvOwner) { ul.appendChild(item("Preview review as shop", { sub: true, href: href("review", { job: j.code, as: "shop" }) })); ul.appendChild(item("Preview review as client", { sub: true, href: href("review", { job: j.code, as: "client" }) })); }
+    ul.appendChild(item("Configurator: try changes, send requests", { sub: true, href: href("cfg", { job: j.code }) }));
+    ul.appendChild(item(role() === "crew" ? "My questions and requests" : "My requests and their status", { sub: true, href: href("cfg", { job: j.code }) + "#logtitle" }));
+    if (isShopSide()) { ul.appendChild(item("Cut list", { sub: true, soon: true })); ul.appendChild(item("Plasma files", { sub: true, soon: true })); ul.appendChild(item("Shop view (crew tasks)", { sub: true, soon: true })); }
+    return ul;
+  }
+  function redraw() { if (!drawer) return; var y = drawer.scrollTop, a = document.activeElement && document.activeElement.textContent; closeDrawerSilently(); openDrawer(null, true);
+    drawer.scrollTop = y; if (a) { var hit = Array.prototype.filter.call(drawer.querySelectorAll("button, a"), function (n) { return n.textContent === a; })[0]; if (hit) hit.focus({ preventScroll: true }); } }
+  function openDrawer(focusSel, quiet) {
+    if (drawer) return;
+    if (!quiet) { var before = JSON.stringify([P.attention, P.helpNew]); refreshNav().then(function () { if (drawer && JSON.stringify([P.attention, P.helpNew]) !== before) redraw(); }); }
+    shade = el("div", { id: "snshade", onclick: closeDrawer });
+    drawer = el("nav", { id: "sndrawer", role: "dialog", "aria-modal": "true", "aria-label": "Menu" });
+    drawer.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+    drawer.appendChild(el("div", { "class": "snhead" }, [el("div", {}, [el("b", { text: P.name || "Ski Town Fabricators" }), el("span", { text: (P.roleName || "") + (P.shopName ? " · " + P.shopName : "") })]),
+      el("button", { type: "button", "class": "snx", "aria-label": "Close menu", text: "×", onclick: closeDrawer })]));
+    // needs my attention
+    var att = P.attention || [];
+    drawer.appendChild(el("h4", {}, [document.createTextNode("Needs my attention"), att.length ? el("span", { "class": "snbadge", text: String(att.length) }) : null]));
+    var au = el("ul", { "class": "snattn" }); if (!att.length) au.appendChild(el("li", { "class": "snnone", text: "Nothing waiting on you." })); att.forEach(function (a) { au.appendChild(attnItem(a)); });
+    drawer.appendChild(au);
+    // jobs
+    drawer.appendChild(el("h4", { text: "Jobs" }));
+    var ju = el("ul", { "class": "snjobs" }), js = P.jobs || [];
+    if (!js.length) ju.appendChild(el("li", { "class": "snnone", text: role() === "crew" ? "Your shop manager hasn't turned on a job for you yet." : "No jobs in your portal yet." }));
+    js.forEach(function (j) {
+      var open = openJob === j.code || (js.length === 1 && openJob === null);
+      var b = el("button", { type: "button", "aria-expanded": String(open), onclick: function () { openJob = open ? "" : j.code; redraw(); } },
+        [el("span", { text: (open ? "▾ " : "▸ ") + j.code }), el("span", { "class": "snmeta", text: j.title || "" })]);
+      var li = el("li", {}, [b]); if (open) li.appendChild(jobParts(j)); ju.appendChild(li);
+    });
+    drawer.appendChild(ju);
+    // people
+    if (role() === "owner" || role() === "manager") {
+      drawer.appendChild(el("h4", { text: role() === "owner" ? "People" : "My crew" }));
+      var pu = el("ul");
+      if (role() === "owner") { pu.appendChild(item("People, shops and jobs", { go: function () { openView("people"); } })); pu.appendChild(item("Help questions", { go: function () { openView("helpadmin"); } })); }
+      else { pu.appendChild(item("My crew: add, jobs, approvals", { go: function () { openView("people"); } })); pu.appendChild(item("Jobs by crew member", { soon: true })); }
+      drawer.appendChild(pu);
+    }
+    // help
+    drawer.appendChild(el("h4", { text: "Help" }));
+    drawer.appendChild(helpList("li"));
+    drawer.appendChild(el("div", { "class": "snfoot", text: "Ski Town Fabricators portal · " + (P.rev || "") }));
+    document.body.appendChild(shade); document.body.appendChild(drawer);
+    menuBtn.setAttribute("aria-expanded", "true");
+    var f = (focusSel && $(focusSel, drawer)) || $("button, a", drawer); if (f) f.focus();
+  }
+  function closeDrawerSilently() { if (shade) shade.remove(); if (drawer) drawer.remove(); shade = drawer = null; }
+  function helpList(kind) {
+    var defs = [["Take the tour", function () { startTour(true); }], ["Show me how to…", function () { openView("howto"); }], ["Common questions", function () { openView("faq"); }],
+      ["Ask Ski Town Fabricators", function () { openView("ask"); }], ["My questions and answers", function () { openView("mine"); }, P.helpNew]];
+    if (kind === "li") { var ul = el("ul"); defs.forEach(function (d) { ul.appendChild(item(d[0], { go: d[1], dot: d[2] })); }); return ul; }
+    var w = el("div", { role: "menu" }); w.appendChild(el("b", { text: "Help" }));
+    defs.forEach(function (d) { w.appendChild(el("button", { type: "button", role: "menuitem", onclick: function () { closePop(); d[1](); } }, [document.createTextNode(d[0]), d[2] ? el("span", { "class": "sndotr", style: "margin-left:auto" }) : null])); });
+    return w;
+  }
+  var pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; document.removeEventListener("click", outside, true); } }
+  function outside(e) { if (pop && !pop.contains(e.target) && e.target !== qBtn && !qBtn.contains(e.target)) closePop(); }
+  function togglePop() { if (pop) return closePop(); pop = el("div", { id: "snpop" }); pop.appendChild(helpList("pop")); pop.addEventListener("keydown", function (e) { if (e.key === "Escape") { closePop(); qBtn.focus(); } }); document.body.appendChild(pop); setTimeout(function () { document.addEventListener("click", outside, true); }, 0); var b = $("button", pop); if (b) b.focus(); }
+
+  /* ---------- full-page views ---------- */
+  var view = null, viewBody = null, viewName = "";
+  function closeView() { if (view) view.remove(); view = viewBody = null; viewName = ""; document.body.style.overflow = ""; try { var u = new URL(location.href); if (u.searchParams.has("view")) { u.searchParams.delete("view"); history.replaceState(null, "", u); } } catch (e) {} }
+  function openView(name, opts) {
+    opts = opts || {};
+    if (name === "people" && !window.STFPanel) { location.href = href("cfg", { view: "people", job: opts.job || "" }); return; }
+    closeView();
+    var T = { people: role() === "owner" ? "People, shops and jobs" : "My crew", job: "Job overview", faq: "Common questions", ask: "Ask Ski Town Fabricators", mine: "My questions and answers", howto: "Show me how to…", helpadmin: "Help questions" };
+    viewBody = el("div", { "class": "snvbody" });
+    view = el("section", { id: "snview", role: "dialog", "aria-modal": "true", "aria-label": T[name] || name }, [el("div", { "class": "snvhead" }, [el("h2", { text: T[name] || name }), el("button", { type: "button", text: "Close ✕", onclick: closeView })]), viewBody]);
+    view.addEventListener("keydown", function (e) { if (e.key === "Escape" && !cardEl) closeView(); });
+    document.body.appendChild(view); document.body.style.overflow = "hidden"; viewName = name;
+    (VIEWS[name] || function () { viewBody.appendChild(el("p", { text: "Not found." })); })(viewBody, opts);
+    var h = $("button", view); if (h && !opts.noFocus) h.focus();
+  }
+  var msg = function (box, t, err) { var m = el("p", { "class": "snmsg" + (err ? " err" : ""), role: "status", text: t }); box.appendChild(m); return m; };
+  function answerBlocks(text) {
+    var out = [], list = null, kind = "";
+    String(text || "").split("\n").forEach(function (line) {
+      var m1 = /^\s*\d+[.)]\s+(.*)$/.exec(line), m2 = /^\s*[-*]\s+(.*)$/.exec(line);
+      if (m1 || m2) { var k = m1 ? "ol" : "ul"; if (!list || kind !== k) { list = el(k); kind = k; out.push(list); } list.appendChild(el("li", { text: (m1 || m2)[1] })); return; }
+      list = null; if (line.trim()) out.push(el("p", { text: line.trim() }));
+    });
+    return out;
+  }
+  var VIEWS = {
+    people: function (box, o) { window.STFPanel.people(box, o); },
+    job: function (box, o) {
+      var j = (P.jobs || []).filter(function (x) { return x.code === o.job; })[0] || { code: o.job };
+      var rv = (P.reviews || []).filter(function (r) { return r.job === j.code; })[0];
+      box.appendChild(el("p", {}, [el("b", { text: j.code }), document.createTextNode(j.title ? " · " + j.title : "")]));
+      if (j.shopName && role() !== "client") box.appendChild(el("p", { "class": "snnote", text: "Shop: " + j.shopName }));
+      box.appendChild(el("p", { text: "Approval: " + (rv ? (rv.stageName || rv.stage) : "No review open right now") }));
+      var g = el("div", { "class": "sngrid" });
+      var go = function (t, h) { g.appendChild(el("button", { type: "button", onclick: function () { location.href = h; } }, [document.createTextNode(t), el("span", { text: "→" })])); };
+      if (rv && rv.audience !== "justin") go("Open the review", href("review", { job: j.code }));
+      if (rv && rv.audience === "justin") { go("Preview review as shop", href("review", { job: j.code, as: "shop" })); go("Preview review as client", href("review", { job: j.code, as: "client" })); }
+      go("Configurator: try changes, send requests", href("cfg", { job: j.code }));
+      go("My requests and their status", href("cfg", { job: j.code }) + "#logtitle");
+      if (role() === "owner") g.appendChild(el("button", { type: "button", onclick: function () { openView("people", { job: j.code }); } }, [document.createTextNode("Manage this job (people, send, approval)"), el("span", { text: "→" })]));
+      box.appendChild(g);
+      if (isShopSide()) box.appendChild(el("p", { "class": "snnote", text: "Cut list, plasma files and crew tasks come with the Shop Floor app." }));
+    },
+    faq: function (box) {
+      var s = el("input", { type: "search", placeholder: "Search the questions (for example: approve, crew, photo)", "aria-label": "Search the questions" });
+      box.appendChild(s); var list = el("div", { "class": "sngrid" }); box.appendChild(list);
+      var wait = msg(box, "Loading…");
+      call("help", ["faq", {}]).then(function (rows) {
+        wait.remove();
+        var draw = function () {
+          list.innerHTML = ""; var t = s.value.trim().toLowerCase(), sec = null, n = 0;
+          rows.forEach(function (r) {
+            if (t && (r.q + " " + r.a).toLowerCase().indexOf(t) < 0) return;
+            if (r.section !== sec) { sec = r.section; list.appendChild(el("h3", { text: sec === "STF" ? "Ski Town Fabricators (you)" : sec })); }
+            n++; list.appendChild(el("details", {}, [el("summary", { text: r.q }), el("div", { "class": "sna" }, answerBlocks(r.a))]));
+          });
+          if (!n) list.appendChild(el("p", { "class": "snnote", text: rows.length ? "No question matches that. Ask us below." : "The common questions aren't set up yet. Ask us below." }));
+        };
+        s.addEventListener("input", draw); draw();
+      }, function () { wait.textContent = "Couldn't load the questions right now."; wait.className = "snmsg err"; });
+      box.appendChild(el("div", { "class": "snrowb" }, [el("span", { "class": "snnote", text: "Didn't find it?" }), el("button", { type: "button", "class": "snbtn2 pri", text: "Ask Ski Town Fabricators", onclick: function () { openView("ask"); } })]));
+    },
+    ask: function (box) {
+      box.appendChild(el("p", { text: "Ask anything about the portal or your job. Most answers come within the hour on weekdays, and you'll see them under My questions and answers (the ? shows a red dot)." }));
+      if (role() === "crew") box.appendChild(el("p", { "class": "snnote", text: "Questions about the job itself (sizes, changes) go to " + managers() + " from the configurator. This box is for help using the portal." }));
+      var t = el("textarea", { "aria-label": "Your question", placeholder: "Type your question" }), b = el("button", { type: "button", "class": "snbtn2 pri", text: "Send question" });
+      box.appendChild(t); box.appendChild(el("div", { "class": "snrowb" }, [b, el("span", { "class": "snnote", text: curJob() ? "We'll know you asked from " + curJob() + "." : "" })]));
+      var m = null;
+      b.addEventListener("click", function () {
+        if (!t.value.trim()) { t.focus(); return; } b.disabled = true; if (m) m.remove(); m = msg(box, "Sending…");
+        call("help", ["ask", { question: t.value, page: PAGE === "review" ? "review page" : "configurator", job: curJob() }]).then(function () { t.value = ""; b.disabled = false; m.textContent = "Sent. We'll answer under My questions and answers."; m.className = "snmsg"; showMine(box); },
+          function (e) { b.disabled = false; m.textContent = (e && e.message) === "too_many" ? "That's a lot of questions this hour. Try again a little later." : "Couldn't send it. Check your connection and try again."; m.className = "snmsg err"; });
+      });
+      showMine(box);
+    },
+    mine: function (box) { showMine(box, true); },
+    howto: function (box) {
+      var gs = GUIDES.filter(guideFits);
+      box.appendChild(el("p", { "class": "snnote", text: "Pick one and we'll point to each step on the screen." }));
+      var g = el("div", { "class": "sngrid" });
+      gs.forEach(function (x) { g.appendChild(el("button", { type: "button", onclick: function () { closeView(); runGuide(x.id); } }, [document.createTextNode(x.title), el("span", { text: "→" })])); });
+      box.appendChild(g);
+      box.appendChild(el("div", { "class": "snrowb" }, [el("button", { type: "button", "class": "snbtn2", text: "Take the whole tour", onclick: function () { closeView(); startTour(true); } }), el("button", { type: "button", "class": "snbtn2", text: "Common questions", onclick: function () { openView("faq"); } })]));
+    },
+    helpadmin: function (box) {
+      box.appendChild(el("p", { "class": "snnote", text: "Everyone's questions. FAB - Help answers from the common questions; anything it can't answer is passed to you here. Your answer shows in the asker's portal right away. Tick 'Add to common questions' and FAB - Help adds it to the list." }));
+      var wait = msg(box, "Loading…");
+      call("help", ["list", {}]).then(function (rows) {
+        wait.remove();
+        if (!rows.length) box.appendChild(el("p", { "class": "snnote", text: "No questions yet." }));
+        rows.forEach(function (r) {
+          var c = el("div", { "class": "snqa" + (r.status === "answered" ? "" : " wait") });
+          c.appendChild(el("div", { "class": "snqm", text: r.name + " · " + r.role + " · " + String(r.at).slice(0, 16).replace("T", " ") + (r.job ? " · " + r.job : "") + " · " + (r.status === "answered" ? "answered by " + r.answeredBy : r.status === "to_stf" ? "PASSED TO YOU" : "waiting for FAB - Help") }));
+          c.appendChild(el("b", { text: r.question }));
+          if (r.status === "answered") c.appendChild(el("div", {}, answerBlocks(r.answer)));
+          else {
+            var t = el("textarea", { "aria-label": "Your answer", placeholder: "Your answer (plain words; numbered steps work)" }), cb = el("input", { type: "checkbox", checked: true });
+            var b = el("button", { type: "button", "class": "snbtn2 pri", text: "Save answer" });
+            b.addEventListener("click", function () { if (!t.value.trim()) return; b.disabled = true;
+              call("help", ["answer", { id: r.id, answer: t.value, addToFaq: cb.checked }]).then(function () { openView("helpadmin", { noFocus: true }); refreshNav(); }, function () { b.disabled = false; b.textContent = "Couldn't save. Try again"; }); });
+            c.appendChild(t); c.appendChild(el("div", { "class": "snrowb" }, [b, el("label", {}, [cb, document.createTextNode(" Add to common questions")])]));
+          }
+          box.appendChild(c);
+        });
+      }, function () { wait.textContent = "Couldn't load the questions."; wait.className = "snmsg err"; });
+    }
+  };
+  function showMine(box, markSeen) {
+    var old = $(".snmine", box); if (old) old.remove();
+    var w = el("div", { "class": "sngrid snmine" }); box.appendChild(w);
+    if (!markSeen) w.appendChild(el("h3", { text: "My questions and answers" }));
+    call("help", ["mine", { seen: !!markSeen }]).then(function (rows) {
+      if (markSeen) { P.helpNew = 0; paintBadges(); }
+      if (!rows.length) { w.appendChild(el("p", { "class": "snnote", text: "You haven't asked anything yet." })); if (markSeen) w.appendChild(el("button", { type: "button", "class": "snbtn2 pri", text: "Ask Ski Town Fabricators", onclick: function () { openView("ask"); } })); return; }
+      rows.forEach(function (r) {
+        var c = el("div", { "class": "snqa" + (r.status === "new" ? " wait" : "") });
+        c.appendChild(el("div", { "class": "snqm", text: "Asked " + String(r.at).slice(0, 16).replace("T", " ") + (r.job ? " · " + r.job : "") }));
+        c.appendChild(el("b", { text: r.question }));
+        if (r.status === "new") c.appendChild(el("p", { "class": "snnote", text: "Waiting for an answer." }));
+        else { c.appendChild(el("div", {}, answerBlocks(r.answer))); c.appendChild(el("div", { "class": "snqm", text: (r.status === "to_stf" ? "Passed to Ski Town Fabricators; they'll answer here. " : "Answered by " + r.answeredBy) })); }
+        w.appendChild(c);
+      });
+      if (markSeen) w.appendChild(el("button", { type: "button", "class": "snbtn2", text: "Ask another question", onclick: function () { openView("ask"); } }));
+    }, function () { w.appendChild(el("p", { "class": "snmsg err", text: "Couldn't load your questions." })); });
+  }
+
+  /* ---------- tour + guides ---------- */
+  /* step: { sel (optional; centered card if it isn't on screen), title, text, view (open a view first), drawer: true (open the menu first) } */
+  function T(s) { return String(s).replace(/\{first\}/g, first()).replace(/\{managers\}/g, managers()); }
+  function tourSteps() {
+    var r = role(), S = [];
+    if (PAGE === "cfg") {
+      S.push({ title: "Welcome, {first}", text: "This is your Ski Town Fabricators portal. This short tour shows you around (about a minute). Skip it any time; it's always under the ? button in the corner." });
+      S.push({ sel: "#snmenu", title: "The menu", text: r === "owner" ? "Everything lives here: what needs you, every job, people and shops, help questions, and help. The red number is what's waiting on you."
+        : r === "manager" ? "Everything lives here: what needs you, your jobs, your crew, and help. The red number is what's waiting on you. Tap a job to jump to its review or configurator."
+        : r === "crew" ? "Your jobs and help live here." : "What needs you, your jobs, and help live here. The red number is what's waiting on you." });
+      S.push({ sel: "#viewer", title: "The 3D preview", text: "Drag to turn it; scroll or pinch to zoom. It shows the style. The shop drawings set the exact sizes." });
+      S.push({ sel: "#opts", title: "Try a change", text: r === "crew" && P.level !== "requests" ? "Try options here to see them. Your access is questions only, so describe a change in your message instead." : "Pick options here; ★ marks what's drawn now. Nothing is sent until you press Send." });
+      S.push({ sel: "#pinbtn", title: "Pin a note", text: "Tap Pin a note, then tap the model to put a note on an exact spot." });
+      S.push({ sel: "#form", title: "Send it", text: r === "crew" ? "Write your message (photos too) and press Send. It goes to {managers} first; only what they approve reaches Ski Town Fabricators." : "Add a message or photos and press Send change request. Its status shows in the list below the page." });
+      if (r !== "client") S.push({ sel: "#m-shop", title: "Shop view", text: "Shop view adds the shop-only details, like flat patterns. Clients never see it." });
+      if (r === "manager") S.push({ sel: "#snmenu", title: "Approvals and crew", text: "When a review is ready for you, it shows under Needs my attention. Menu > My crew is where you add crew, pick their jobs, and approve what they send." });
+      if (r === "owner") S.push({ sel: "#snmenu", title: "People, jobs and help", text: "Menu > People, shops and jobs: save people, add jobs, Send to portal, switch the client signature on or off, and move reviews along. Menu > Help questions: answer what FAB - Help passed to you." });
+    } else {
+      S.push({ title: "Welcome, {first}", text: r === "client" ? "This page is your approval for this job. Go page by page, answer what's asked, then send it on the last page. About a minute to learn; skip any time."
+        : "This is the approval page for this job. Go page by page, answer each question (or pass it to the client), then approve on the last page. Skip any time." });
+      S.push({ sel: "#pillNeed", title: "What's left", text: "This shows how many answers are left. Tap it to jump to the next one." });
+      S.push({ sel: "#main", title: "Each page", text: "Pictures with numbered markers (tap one to see what it points at), then the question. Every page has a comment box that follows you to the end." });
+      if (r === "manager" || r === "owner") S.push({ sel: "#main", title: "Not your call?", text: "Pick \"Let the client decide\" on a question. The client gets only the questions you pass, after you approve." });
+      S.push({ sel: "#next", title: "Next and Back", text: "Move between pages here. The last page is the approval." });
+      S.push({ title: "The last page", text: r === "client" ? "Send your answers there (and sign if we asked you to). It goes straight to Ski Town Fabricators." : "Choose what happens next and sign. If nothing needs changing it moves on by itself: to the client if you passed anything or want their signature, otherwise it's approved and ready to ship." });
+    }
+    S.push({ sel: "#snq", title: "Help is right here", text: "Tap ? any time to take this tour again, follow step-by-step help for common tasks, read common questions, or ask Ski Town Fabricators." });
+    return S;
+  }
+  var GUIDES = [
+    { id: "switch", title: "Switch to another job", roles: "owner manager crew client", page: "any", steps: [{ sel: "#snmenu", title: "1. Open the menu", text: "Tap Menu (top left)." }, { drawer: true, sel: "#sndrawer .snjobs", title: "2. Pick the job", text: "Under Jobs, tap the job, then the part you want: the review, the configurator, or your requests." }] },
+    { id: "request", title: "Send a change request", roles: "owner manager client crewreq", page: "cfg", steps: [{ sel: "#opts", title: "1. Make the change", text: "Pick the options you'd like. ★ is what's drawn now." }, { sel: "#pinbtn", title: "2. Point at something (optional)", text: "Tap Pin a note, then tap the model where it applies." }, { sel: "#msg", title: "3. Say what you need", text: "Add anything else here. You can paste a screenshot too." }, { sel: "#send", title: "4. Send it", text: "Press Send change request. It shows in your list with its status." }] },
+    { id: "question", title: "Ask about the job", roles: "crew", page: "cfg", steps: [{ sel: "#msg", title: "1. Type your question", text: "Say what it's about; pin a note on the model if it helps." }, { sel: "#send", title: "2. Send it", text: "It goes to {managers} first. You'll see its status below." }] },
+    { id: "photo", title: "Attach a photo or drawing", roles: "owner manager client crew", page: "cfg", steps: [{ sel: "label[for=reqfile]", title: "Attach", text: "Tap Attach photos or a drawing and pick files (JPG, PNG or PDF). They go with your next request." }] },
+    { id: "status", title: "See the status of my requests", roles: "owner manager client crew", page: "cfg", steps: [{ sel: "#logtitle", title: "Your requests", text: "Everything you've sent is listed here with its status, newest first." }] },
+    { id: "approve", title: "Approve a review", roles: "manager client", page: "review", steps: [{ sel: "#pillNeed", title: "1. Answer each question", text: "This shows what's left. Tap it to jump to the next question." }, { sel: "#next", title: "2. Page by page", text: "Use Next. Add comments in the box on any page." }, { title: "3. The last page", text: "Choose what happens next, sign if asked, and press the button. It goes straight to Ski Town Fabricators." }] },
+    { id: "delegate", title: "Pass a question to the client", roles: "manager", page: "review", steps: [{ sel: "#main", title: "Let the client decide", text: "On the question, pick \"Let the client decide\". After you approve, the client gets only the questions you passed." }] },
+    { id: "crewadd", title: "Add a crew member", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=crew-form]", title: "1. Fill this in", text: "Their name and email, what they can do, and which jobs they can see. Press Add crew." }, { sel: "[data-tour=crew-list]", title: "2. Send them their link", text: "Press Copy link and text or email it to them. The first time they open it, the portal emails them a code." }] },
+    { id: "crewjob", title: "Turn a job on for crew", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=crew-list]", title: "Edit their jobs", text: "Press Edit on the person, tick the jobs they should see, and Save. They see only those jobs, in Shop view." }] },
+    { id: "crewok", title: "Approve what my crew sent", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=waiting]", title: "Waiting on you", text: "Each item shows what they sent. Approve and send to STF, or Don't send. Add a note if you like." }] },
+    { id: "permreq", title: "Ask for a permission change", roles: "manager", page: "cfg", view: "people", steps: [{ sel: "[data-tour=permreq]", title: "Ask STF", text: "Say what you'd like changed (for example letting someone approve). Ski Town Fabricators gets back to you." }] },
+    { id: "person", title: "Save a person and send their link", roles: "owner", page: "cfg", view: "people", steps: [{ sel: "[data-tour=person-form]", title: "1. Save them", text: "Name, email, role and shop (or company for a client). Press Save person." }, { sel: "[data-tour=people]", title: "2. Copy their link", text: "Press Copy link and send it. Only you share links." }] },
+    { id: "job", title: "Add a job and send it to a portal", roles: "owner", page: "cfg", view: "people", steps: [{ sel: "[data-tour=job-form]", title: "1. Add the job", text: "Job code, title, shop, and the people on it. Press Add job." }, { sel: "[data-tour=jobs]", title: "2. Send to portal", text: "Nobody sees the job until you press Send to portal." }] },
+    { id: "stage", title: "Send a review to the shop", roles: "owner", page: "cfg", view: "people", steps: [{ sel: "[data-tour=jobs]", title: "Approval buttons", text: "Under each sent job: Send review to shop, the client signature switch, and Preview as shop or client. After the shop signs, the portal moves it on by itself." }] },
+    { id: "helpq", title: "Answer a help question", roles: "owner", page: "any", view: "helpadmin", steps: [{ sel: "#snview .snqa.wait", title: "Answer it", text: "Type your answer and press Save answer. Keep 'Add to common questions' ticked so it helps the next person." }] },
+    { id: "ask", title: "Ask Ski Town Fabricators", roles: "owner manager crew client", page: "any", view: "ask", steps: [{ sel: "#snview textarea", title: "Type and send", text: "Ask anything about the portal. The answer shows under My questions and answers." }] }
+  ];
+  function guideFits(g) { var r = role(); var rs = g.roles.split(" "); return rs.indexOf(r) >= 0 || (r === "crew" && P.level === "requests" && rs.indexOf("crewreq") >= 0); }
+  var cardEl = null, ringEl = null, cur = null;
+  function endSteps(storeIt) { if (cardEl) cardEl.remove(); if (ringEl) ringEl.remove(); cardEl = ringEl = null; window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true);
+    if (cur && cur.tour && storeIt) store.set(tourKey(), storeIt); if (cur && cur.tour) { try { sessionStorage.setItem(tourKey(), "1"); } catch (e) {} } cur = null; if (qBtn) qBtn.focus(); }
+  function tourKey() { return "stf-tour-" + PAGE + "-" + (P.uid || "x"); }
+  function visible(n) { if (!n) return false; var r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(n).visibility !== "hidden"; }
+  function place() {
+    if (!cur || !cardEl) return;
+    var st = cur.steps[cur.i], t = st.sel ? $(st.sel) : null;
+    if (t && !visible(t)) t = null;
+    if (!t) { ringEl.className = "none"; ringEl.removeAttribute("style"); cardEl.style.left = "50%"; cardEl.style.top = "50%"; cardEl.style.transform = "translate(-50%,-50%)"; return; }
+    var r = t.getBoundingClientRect(), pad = 6, vh = window.innerHeight, vw = window.innerWidth;
+    var top = Math.max(4, r.top - pad), h = Math.min(r.height + pad * 2, vh - top - 4);
+    ringEl.className = ""; ringEl.style.left = Math.max(4, r.left - pad) + "px"; ringEl.style.top = top + "px"; ringEl.style.width = Math.min(r.width + pad * 2, vw - 8) + "px"; ringEl.style.height = Math.max(h, 24) + "px";
+    cardEl.style.transform = ""; var ch = cardEl.offsetHeight, cw = cardEl.offsetWidth;
+    var y = r.bottom + 14; if (y + ch > vh - 8) y = r.top - ch - 14; if (y < 8) y = Math.max(8, vh - ch - 8);
+    cardEl.style.top = y + "px"; cardEl.style.left = Math.min(Math.max(8, r.left), vw - cw - 8) + "px";
+  }
+  /* phones: the card sits at the bottom, so keep the highlighted thing above it */
+  function mobileFit(t) {
+    if (!t || !cardEl || window.innerWidth > 600 || !visible(t)) return;
+    var r = t.getBoundingClientRect(), room = window.innerHeight - cardEl.offsetHeight - 28;
+    if (r.bottom > room || r.top < 56) { var sc = view && view.contains(t) ? view : null, d = r.top - Math.max(64, Math.min(room - r.height, 80));
+      if (sc) sc.scrollTop += d; else window.scrollBy(0, d); }
+  }
+  function waitFor(sel, ms) { return new Promise(function (res) { var t0 = Date.now(); (function poll() { var n = sel ? $(sel) : null; if (!sel || (n && visible(n)) || Date.now() - t0 > ms) return res(n); setTimeout(poll, 150); })(); }); }
+  function showStep() {
+    var st = cur.steps[cur.i];
+    var before = Promise.resolve();
+    if (st.drawer) { closeView(); openDrawer(); before = waitFor(st.sel, 1500); }
+    else if (drawer && cur.i > 0) closeDrawerSilently();
+    if (st.view && viewName !== st.view) { closeDrawerSilently(); openView(st.view, { noFocus: true }); before = waitFor(st.sel, 5000); }
+    else if (st.sel) before = before.then(function () { return waitFor(st.sel, 600); });
+    before.then(function () {
+      if (!cur) return;
+      var t = st.sel ? $(st.sel) : null; if (t && visible(t) && !st.drawer && !(view && view.contains(t))) { t.scrollIntoView({ block: "center", behavior: "instant" in document.documentElement.style ? "instant" : "auto" }); }
+      else if (t && view && view.contains(t)) t.scrollIntoView({ block: "center" });
+      if (!ringEl) { ringEl = el("div", { id: "snring", "aria-hidden": "true" }); document.body.appendChild(ringEl); }
+      if (cardEl) cardEl.remove();
+      var last = cur.i === cur.steps.length - 1, never = el("input", { type: "checkbox" });
+      cardEl = el("div", { id: "sncard", role: "dialog", "aria-modal": "false", "aria-labelledby": "sncardt" }, [
+        el("span", { "class": "sncnt", text: (cur.tour ? "Tour" : cur.title) + " · " + (cur.i + 1) + " of " + cur.steps.length }),
+        el("b", { id: "sncardt", text: T(st.title) }), el("p", { text: T(st.text) }),
+        cur.tour ? el("label", {}, [never, document.createTextNode(" Don't show this tour again")]) : null,
+        el("div", { "class": "snrowb" }, [el("button", { type: "button", "class": "snskip", text: cur.tour ? "Skip tour" : "Close", onclick: function () { endSteps(never.checked ? "never" : ""); } }),
+          el("span", { "class": "snrowb" }, [cur.i ? el("button", { type: "button", "class": "snbtn2", text: "Back", onclick: function () { cur.i--; showStep(); } }) : null,
+            el("button", { type: "button", "class": "snbtn2 pri", text: last ? "Done" : "Next", onclick: function () { if (last) { endSteps(never.checked ? "never" : "done"); } else { cur.i++; showStep(); } } })])])]);
+      cardEl.addEventListener("keydown", function (e) { if (e.key === "Escape") endSteps(never.checked ? "never" : ""); });
+      document.body.appendChild(cardEl);
+      requestAnimationFrame(function () { mobileFit(t); place(); }); setTimeout(place, 250);
+      var nb = cardEl.querySelectorAll(".snbtn2.pri")[0]; if (nb) nb.focus({ preventScroll: true });
+    });
+  }
+  function run(steps, opts) { if (cur) endSteps(""); closePop(); cur = { steps: steps, i: 0, tour: !!opts.tour, title: opts.title || "" }; window.addEventListener("resize", place); window.addEventListener("scroll", place, true); showStep(); }
+  function startTour(force) {
+    if (P.role === "guest" || !P.uid) return;
+    if (!force) { var s = store.get(tourKey()); if (s === "never" || s === "done") return; try { if (sessionStorage.getItem(tourKey())) return; } catch (e) {} }
+    closeView(); closeDrawerSilently(); run(tourSteps(), { tour: true });
+  }
+  function runGuide(id) {
+    var g = GUIDES.filter(function (x) { return x.id === id; })[0]; if (!g) return;
+    if (g.page !== "any" && g.page !== PAGE) {
+      if (g.page === "review") { var rs = (P.reviews || []).filter(function (r) { return r.audience !== "justin"; }); if (!rs.length) { openView("howto"); msg(viewBody, "Nothing is waiting for your approval right now. When Ski Town Fabricators sends you a review, it shows under Needs my attention in the menu."); return; } location.href = href("review", { job: rs[0].job, guide: id }); return; }
+      location.href = href("cfg", { job: curJob(), guide: id }); return;
+    }
+    run(g.steps.map(function (s) { var o = {}; for (var k in s) o[k] = s[k]; if (g.view && !o.view && !o.drawer) o.view = g.view; return o; }), { title: g.title });
+  }
+
+  /* ---------- start ---------- */
+  var readyRv = null, readyP = new Promise(function (r) { readyRv = r; });
+  window.STFNav = {
+    context: function (o) { setCtx(o); },
+    reviewReady: function () { readyRv(); },
+    openView: openView, closeView: closeView, startTour: startTour, runGuide: runGuide, refresh: refreshNav,
+    viewBody: function () { return viewBody; }
+  };
+  (window.__stfBoot || Promise.resolve(P)).then(function (b) {
+    P = b || P;
+    if (P.role === "guest" || !P.uid) return;
+    var go = function () {
+      buildBar();
+      var waitPage = PAGE === "review" ? readyP : Promise.resolve();
+      waitPage.then(function () {
+        setTimeout(function () {
+          var v = Q.get("view"), g = Q.get("guide");
+          if (g) runGuide(g); else if (v) openView(v, { job: Q.get("job") || "" }); else startTour(false);
+        }, PAGE === "review" ? 400 : 900);
+      });
+    };
+    if (document.body) go(); else document.addEventListener("DOMContentLoaded", go);
   });
 })();
 </script>
