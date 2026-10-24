@@ -1,6 +1,12 @@
 /**
  * STF Portal (Google Apps Script web app) - rev P0.9, Oct 23 2026. Owner: FAB - Apps.
  *
+ * P0.9.2: job thumbnails. thumb(code): a small picture for the job rows: the job's own picture (owner upload, jobs.thumb)
+ *   or one the owner picked from the review) or else the clean picture the job chat named in review.json "thumb". No
+ *   guessing from other review pictures (Justin: comparisons and drawings make poor thumbnails). Shrunk by Drive, cached 6 h.
+ *   kind = sign | rail for the plain icon shown when there's no picture.
+ *   admin 'thumbopts' {code}: the review's pictures as suggestions; 'jobthumb' {code, fileId} picks one, {code, b64, mime}
+ *   uploads the owner's own, {code, clear: true} goes back to automatic.
  * P0.9.1: owner-only "What's new" review tour. whatsnew(): get my verdicts/notes for a release, save one step's
  *   verdict (ok | change) + note. Kept in the "whatsnew" tab so FAB - Apps can read Justin's notes.
  * P0.9 (Apps Spec P20, Justin's walkthrough): shop logos + contact details (STF Portal Branding folder), owner saves
@@ -42,7 +48,7 @@
  * Nothing here shares a file or folder. Deploying the web app ("Anyone") is Justin's own action.
  */
 
-var REV = 'P0.9.1';
+var REV = 'P0.9.2';
 var SHOP_COLS = ['id', 'name', 'created', 'active', 'logo', 'contact', 'email', 'phone'];
 var POLL_MAX_OPS = 60;
 var FRONT_URL = 'https://skitownfabricators.github.io/stf-portal/';
@@ -97,7 +103,8 @@ function doPost(e) {
       nav: function () { return nav_(whoFromToken_(k)); },
       requests: function () { return requests(k, a[0] || {}); },
       inbox: function () { return inbox(k, a[0], a[1] || {}); },
-      whatsnew: function () { return whatsnew(k, a[0], a[1] || {}); }
+      whatsnew: function () { return whatsnew(k, a[0], a[1] || {}); },
+      thumb: function () { return thumb(k, String(a[0] || '')); }
     };
     if (!fns.hasOwnProperty(req.fn)) throw new Error('invalid_argument');
     out = { ok: true, result: fns[req.fn]() };
@@ -175,7 +182,7 @@ function ensureTables_(ss) {
   ensureSheet_(ss, 'docs', ['path', 'json', 'updatedAt', 'updatedBy']);
   ensureSheet_(ss, 'links', LINK_COLS);
   ensureSheet_(ss, 'shops', SHOP_COLS);
-  ensureSheet_(ss, 'jobs', ['code', 'title', 'shop', 'people', 'sent', 'created', 'updated', 'review', 'stageAt', 'clientSeen', 'clientSign', 'shopClientSign']);
+  ensureSheet_(ss, 'jobs', ['code', 'title', 'shop', 'people', 'sent', 'created', 'updated', 'review', 'stageAt', 'clientSeen', 'clientSign', 'shopClientSign', 'thumb']);
   ensureSheet_(ss, 'submissions', ['at', 'app', 'job', 'title', 'from', 'role', 'summary', 'path']);
   ensureSheet_(ss, 'devices', ['hash', 'uid', 'expires', 'created']);
   ensureSheet_(ss, 'codes', ['uid', 'hash', 'expires', 'tries', 'sentAt']);
@@ -501,7 +508,7 @@ function links(token, action, args) { return admin(token, action, args); }
 function admin(token, action, args) {
   var w = whoFromToken_(token); if (w.role !== 'owner') throw new Error('permission_denied');
   args = args || {};
-  if (action === 'state' || action === 'list') return adminDo_(w, action, args);
+  if (action === 'state' || action === 'list' || action === 'thumbopts') return adminDo_(w, action, args);
   var lock = LockService.getScriptLock(), out; lock.waitLock(20000);
   try { out = adminDo_(w, action, args); } finally { lock.releaseLock(); }
   /* P0.9: every save returns the fresh lists, so the page redraws without a second call */
@@ -511,7 +518,7 @@ function admin(token, action, args) {
 function adminState_() {
   return { shops: shops_().map(function (s) { return { id: s.id, name: s.name, logo: String(s.logo || ''), contact: String(s.contact || ''), email: String(s.email || ''), phone: String(s.phone || '') }; }),
     people: findLinks_({}).filter(function (l) { return l.role !== 'owner'; }).map(personOut_),
-    jobs: jobs_().map(function (j) { return { code: j.code, title: j.title, shop: j.shop, people: j.people, sent: j.sent, review: j.review, stageAt: j.stageAt ? String(j.stageAt) : '', clientSign: j.clientSign, shopClientSign: j.shopClientSign }; }),
+    jobs: jobs_().map(function (j) { return { code: j.code, title: j.title, shop: j.shop, people: j.people, sent: j.sent, review: j.review, stageAt: j.stageAt ? String(j.stageAt) : '', clientSign: j.clientSign, shopClientSign: j.shopClientSign, thumb: String(j.thumb || '') }; }),
     levels: LEVELS, roles: ROLE_NAMES, stages: STAGES, drafts: unlistedReviews_() };
 }
 function adminDo_(w, action, args) {
@@ -534,6 +541,37 @@ function adminDo_(w, action, args) {
       var lf = brandingFolder_().createFile(Utilities.newBlob(lb, args.mime, 'logo_' + ls.id + '_' + Date.now() + '.' + ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/svg+xml': 'svg' })[args.mime]));
       lf.setDescription('Shop logo for ' + ls.name + ' (STF Portal)');
       setCells_('shops', ls._row, { logo: lf.getId() }); return { ok: true, logo: lf.getId() };
+    }
+    if (action === 'thumbopts') {
+      var oj = String(args.code || ''), of = reviewFolder_(oj), R2 = null, seen = {}, opts = [];
+      if (!of) return { options: [] };
+      try { R2 = reviewJson_(oj); } catch (e) {}
+      var names = [];
+      var add = function (src) { if (typeof src === 'string' && /\.(png|jpe?g|webp)$/i.test(src)) { var n = src.split('/').pop(); if (!seen[n]) { seen[n] = 1; names.push(n); } } };
+      if (R2) { add(R2.thumb); (R2.slides || []).forEach(function (sl) { (sl.figures || []).forEach(function (fg) { add(fg && fg.src); }); if (sl.image) add(sl.image); }); }
+      names.slice(0, 16).forEach(function (n) {
+        var it = of.getFilesByName(n); if (!it.hasNext()) return; var f = it.next(), b = null;
+        try { b = f.getThumbnail(); } catch (e) {}
+        if (!b && f.getSize() < 200 * 1024) b = f.getBlob();
+        if (b) opts.push({ id: f.getId(), name: n, src: 'data:' + (b.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(b.getBytes()) });
+      });
+      return { options: opts };
+    }
+    if (action === 'jobthumb') {
+      var tj = jobs_().filter(function (x) { return x.code === String(args.code); })[0]; if (!tj) throw new Error('not_found');
+      try { CacheService.getScriptCache().remove('thb_' + tj.code); } catch (e) {}
+      if (args.clear) { setCells_('jobs', tj._row, { thumb: '' }); return { ok: true }; }
+      if (args.fileId) {
+        var rf = reviewFolder_(tj.code), pf = DriveApp.getFileById(String(args.fileId)), inRv = false, pp = pf.getParents();
+        while (pp.hasNext()) if (rf && pp.next().getId() === rf.getId()) inRv = true;
+        if (!inRv) throw new Error('not_found');
+        setCells_('jobs', tj._row, { thumb: pf.getId() }); return { ok: true, thumb: pf.getId() };
+      }
+      if (!/^image\/(png|jpeg|webp)$/.test(String(args.mime))) throw new Error('unsupported_type');
+      var tb = Utilities.base64Decode(String(args.b64 || '')); if (!tb.length || tb.length > 4 * 1024 * 1024) throw new Error('too_large');
+      var tf = brandingFolder_().createFile(Utilities.newBlob(tb, args.mime, 'thumb_' + tj.code + '_' + Date.now() + '.' + ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' })[args.mime]));
+      tf.setDescription('Job picture for ' + tj.code + ' (STF Portal)');
+      setCells_('jobs', tj._row, { thumb: tf.getId() }); return { ok: true, thumb: tf.getId() };
     }
     if (action === 'addshop') {
       var nm = String(args.name || '').trim().slice(0, 80); if (!nm) throw new Error('invalid_argument');
@@ -1080,6 +1118,37 @@ function inbox(token, action, args, asWho) {
 }
 /** P0.9: change requests and questions on one job, as this person may see them: owner = everyone's; shop manager = their own + their
     crew's; client and crew = their own. [{at, from, role, status, message, changes, notes, summary, mine}] newest first. */
+/* ---------- P0.9.2: job thumbnails ---------- */
+function thumbKind_(t) { t = String(t || ''); return /sign|placard|plaque|letter|logo|address/i.test(t) ? 'sign' : /rail|stair|guard|deck|balust|picket|fence|gate/i.test(t) ? 'rail' : ''; }
+function thumb(token, code) {
+  var who = whoFromToken_(token);
+  if (who.role === 'guest' || who.role === 'locked') throw new Error('permission_denied');
+  if (!/^[A-Z0-9][A-Z0-9_.\-]*$/.test(code)) throw new Error('invalid_argument');
+  var j = jobs_().filter(function (x) { return x.code === code; })[0];
+  if (who.role !== 'owner' && !(j && canSeeJob_(who, code))) throw new Error('permission_denied');
+  var cache = null; try { cache = CacheService.getScriptCache(); var hit = cache.get('thb_' + code); if (hit) return JSON.parse(hit); } catch (e) {}
+  var out = { src: '', kind: thumbKind_(j ? j.title : '') }, f = null;
+  try {
+    if (j && j.thumb) f = DriveApp.getFileById(String(j.thumb));
+    else {
+      var R = reviewJson_(code), name = '';
+      if (R) {
+        if (!out.kind) out.kind = thumbKind_(R.title);
+        var pick = function (src) { if (!name && typeof src === 'string' && /\.(png|jpe?g|webp)$/i.test(src) ) name = src.split('/').pop(); };
+        pick(R.thumb);
+        if (name) { var it = reviewFolder_(code).getFilesByName(name); if (it.hasNext()) f = it.next(); }
+      }
+    }
+    if (f) {
+      var b = null; try { b = f.getThumbnail(); } catch (e) {}
+      if (!b && f.getSize() < 300 * 1024) b = f.getBlob();
+      if (b) out.src = 'data:' + (b.getContentType() || 'image/png') + ';base64,' + Utilities.base64Encode(b.getBytes());
+    }
+  } catch (e) {}
+  try { var js = JSON.stringify(out); if (cache && js.length < 95000) cache.put('thb_' + code, js, 21600); } catch (e) {}
+  return out;
+}
+
 /* ---------- P0.9.1: What's new review (owner only) ---------- */
 var WN_COLS = ['rel', 'id', 'title', 'verdict', 'note', 'at'];
 function whatsnew(token, action, args) {

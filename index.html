@@ -244,6 +244,35 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
   var q = new URLSearchParams(location.search);
   var P = window.STF_PORTAL = { token: q.get("k") || "", app: window.STF_APP || q.get("app") || "configurator", role: "guest", pollMs: 15000 };
   var code = function (m) { return /permission_denied/.test(m) ? "permission_denied" : /too_large/.test(m) ? "too_large" : /unsupported_type/.test(m) ? "unsupported_type" : /not_found/.test(m) ? "not_found" : /invalid_argument/.test(m) ? "invalid_argument" : "unavailable"; };
+  /* P0.9.2 landing page (Blueprint welcome, Justin Oct 23): nothing of the portal shows until access is confirmed and the
+     portal has opened the right place. The code screen and the dead-link screen use the same page (__stfCard).
+     Removed by window.__stfUncover() (Nav) or after 30 s while only "Checking access" shows. */
+  (function () {
+    var css = document.createElement("style");
+    css.textContent = "#stfcover{position:fixed;inset:0;z-index:9990;background:#eef1f5;overflow:auto;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1b1f24}" +
+      "#stfcover *{box-sizing:border-box}#stfcover .lt{background:#2c4a63;color:#fff;text-align:center;padding:34px 16px 64px}" +
+      "#stfcover .lt img{width:130px;height:auto;background:#fff;border-radius:12px;padding:6px;display:inline-block}#stfcover .lt b{display:block;font:700 20px system-ui;margin-top:10px}" +
+      "#stfcover .lc{width:calc(100% - 32px);max-width:400px;margin:-40px auto 0;background:#fff;border-radius:14px;border-top:4px solid #ffc20e;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:18px;display:grid;gap:12px}" +
+      "#stfcover .lc>b{font-size:17px}#stfcover ul{margin:0;padding-left:18px;color:#445}#stfcover .row{display:flex;gap:10px;align-items:center}#stfcover .note{font-size:14px;color:#5d6670}" +
+      "#stfcover .sp{flex:none;width:26px;height:26px;border:4px solid #cfd6de;border-top-color:#2c4a63;border-radius:50%;animation:stfspin .9s linear infinite}" +
+      "#stfcover .lf{text-align:center;font-size:12px;color:#778;padding:22px 16px}" +
+      "#stfcover .btn{font:600 15px system-ui;padding:11px 16px;border-radius:8px;border:0;background:#2c4a63;color:#fff;cursor:pointer}#stfcover .lnk{font:14px system-ui;background:none;border:0;color:#5d6670;text-decoration:underline;cursor:pointer;justify-self:start;padding:0}" +
+      "#stfcover input{font:600 20px ui-monospace,monospace;letter-spacing:.2em;padding:10px;border:1px solid #b9c2cc;border-radius:8px;min-width:0;width:100%;background:#fff;color:#1b1f24}" +
+      "@keyframes stfspin{to{transform:rotate(360deg)}}" +
+      "@media (prefers-color-scheme:dark){#stfcover{background:#15181c;color:#eef1f5}#stfcover .lc{background:#1f242b}#stfcover ul,#stfcover .note{color:#c4cad1}#stfcover input{background:#262b32;color:#fff;border-color:#4a525c}}" +
+      "html.stfcov body{overflow:hidden}";
+    document.head.appendChild(css);
+    var c = document.createElement("div"); c.id = "stfcover";
+    c.innerHTML = '<div class="lt"><img src="stf-logo.png" alt="Ski Town Fabricators"><b>Ski Town Fabricators Portal</b></div><div class="lc" role="status"><b>Welcome</b>' +
+      '<ul><li>Approve reviews and sign off</li><li>Send change requests and questions</li><li>Message your shop and Ski Town Fabricators</li></ul>' +
+      '<div class="row"><div class="sp" aria-hidden="true"></div><span class="msg">Checking access…</span></div></div><div class="lf">Private link · only the people on your jobs see them</div>';
+    document.documentElement.appendChild(c); document.documentElement.classList.add("stfcov");
+    var t0 = setTimeout(function () { window.__stfUncover(); }, 30000);
+    window.__stfUncover = function () { clearTimeout(t0); var n = document.getElementById("stfcover"); if (n) n.remove(); document.documentElement.classList.remove("stfcov"); };
+    window.__stfCoverMsg = function (t) { var m = c.querySelector(".msg"); if (m) m.textContent = t; };
+    /* swap the card for the code screen or the dead-link message; the page stays covered */
+    window.__stfCard = function (html, label) { clearTimeout(t0); var k = c.querySelector(".lc"); k.innerHTML = html; k.setAttribute("role", "dialog"); k.setAttribute("aria-label", label || ""); if (!c.parentNode) { document.documentElement.appendChild(c); document.documentElement.classList.add("stfcov"); } return k; };
+  })();
   var DEVKEY = "stf-dev-" + (P.token || "none").slice(0, 10), dev = "";
   try { dev = localStorage.getItem(DEVKEY) || ""; } catch (e) {}
   /* P0.9 Demo mode (practice): while sessionStorage "stf-demo" is on, nothing is saved. Reads go to the server as usual;
@@ -279,18 +308,13 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
   function gate(hint) {
     return new Promise(function (done) {
       var go = function () {
-        var w = document.createElement("div");
-        w.setAttribute("role", "dialog"); w.setAttribute("aria-modal", "true"); w.setAttribute("aria-label", "Confirm it's you");
-        w.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(20,22,26,.92);display:flex;align-items:center;justify-content:center;padding:16px;font:15px system-ui,-apple-system,Segoe UI,sans-serif";
-        w.innerHTML = '<div style="background:#fff;color:#16181d;border-radius:12px;max-width:380px;width:100%;padding:22px;display:grid;gap:12px">' +
-          '<b style="font-size:18px;letter-spacing:.03em">SKI TOWN FABRICATORS</b>' +
+        var w = window.__stfCard('<b>Confirm it\'s you</b>' +
           '<div>To keep your link private, we email a 6-digit code the first time you open it on a phone or computer. This device is then remembered for 90 days.</div>' +
-          '<div class="g-msg" style="font-size:14px;color:#555"></div>' +
-          '<button type="button" class="g-send" style="font:600 15px system-ui;padding:11px;border-radius:8px;border:0;background:#16181d;color:#fff;cursor:pointer">Email me a code</button>' +
-          '<form class="g-form" style="display:none;gap:8px;grid-template-columns:1fr auto"><input class="g-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" aria-label="6-digit code" style="font:600 20px ui-monospace,monospace;letter-spacing:.2em;padding:10px;border:1px solid #bbb;border-radius:8px;min-width:0">' +
-          '<button type="submit" style="font:600 15px system-ui;padding:0 16px;border-radius:8px;border:0;background:#16181d;color:#fff;cursor:pointer">Open</button></form>' +
-          '<button type="button" class="g-again" style="display:none;font:14px system-ui;background:none;border:0;color:#555;text-decoration:underline;cursor:pointer;justify-self:start;padding:0">Send a new code</button></div>';
-        document.body.appendChild(w);
+          '<div class="g-msg note"></div>' +
+          '<button type="button" class="g-send btn">Email me a code</button>' +
+          '<form class="g-form" style="display:none;gap:8px;grid-template-columns:1fr auto"><input class="g-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code" aria-label="6-digit code">' +
+          '<button type="submit" class="btn">Open</button></form>' +
+          '<button type="button" class="g-again lnk" style="display:none">Send a new code</button>', "Confirm it's you");
         var q = function (c) { return w.querySelector(c); }, msg = q(".g-msg");
         var M = { wait_a_minute: "A code was just sent. Wait a minute before asking for another.", too_many_codes: "Too many codes this hour. Try again later.", wrong_code: "That code doesn't match. Check the newest email and try again.", code_expired: "That code has expired (10 minutes) or was used. Send a new one." };
         msg.textContent = hint ? "We'll send it to " + hint + "." : "";
@@ -306,16 +330,10 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
     });
   }
   /* P0.9.1: a link that no longer works (replaced, turned off or mistyped) says so instead of opening a bare configurator */
-  function deadLink() {
+  function deadLink(none) {
     var go = function () {
-      var w = document.createElement("div");
-      w.setAttribute("role", "alertdialog"); w.setAttribute("aria-modal", "true"); w.setAttribute("aria-label", "This link doesn't work");
-      w.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(20,22,26,.94);display:flex;align-items:center;justify-content:center;padding:16px;font:15px system-ui,-apple-system,Segoe UI,Roboto,sans-serif";
-      w.innerHTML = '<div style="background:#fff;color:#16181d;border-radius:12px;max-width:400px;width:100%;padding:22px;display:grid;gap:12px">' +
-        '<b style="font-size:18px;letter-spacing:.03em">SKI TOWN FABRICATORS</b>' +
-        '<div><b>This link doesn\'t work anymore.</b> It may have been replaced with a new one or turned off.</div>' +
-        '<div style="font-size:14px;color:#555">Use the newest link Ski Town Fabricators sent you. If you can\'t find it, ask them for a new one.</div></div>';
-      document.body.appendChild(w);
+      window.__stfCard((none ? '<b>Open your private link</b><div>This portal opens from the link Ski Town Fabricators sent you.</div>' : '<b>This link doesn\'t work anymore</b><div>It may have been replaced with a new one or turned off.</div>') +
+        '<div class="note">Use the newest link Ski Town Fabricators sent you. If you can\'t find it, ask them for a new one.</div>', "This link doesn't work");
     };
     if (document.body) go(); else document.addEventListener("DOMContentLoaded", go);
   }
@@ -323,9 +341,9 @@ td .thumbs{margin-top:6px}td .thumb{width:56px;height:56px}
   var booted = run("boot", [P.app]).then(function (b) {
       if (b.needCode) return gate(b.emailHint).then(function () { location.reload(); return new Promise(function () {}); });
       for (var x in b) P[x] = b[x];
-      if (P.role === "guest" && P.token) deadLink();
+      if (P.role === "guest") deadLink(!P.token); else window.__stfCoverMsg("Opening your portal…");
       return P; },
-    function (e) { P.bootError = e; return P; });
+    function (e) { P.bootError = e; window.__stfCoverMsg("Couldn't reach the portal. Check your connection and refresh the page."); setTimeout(window.__stfUncover, 4000); return P; });
   window.__stfBoot = booted;
   var api = function (ops) { return run("api", [P.app, ops]); };
   var err = function (r) { var e = new Error(r.error); e.code = r.error === "permission_denied" ? "invalid_argument" : r.error; return e; };
@@ -1042,6 +1060,11 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
 .stfpanel details.more[open]>div{display:grid;gap:6px;margin-top:6px}
 .stfpanel .why{font-size:12px;color:var(--muted);flex-basis:100%}
 .stfpanel .jobcard{display:grid;gap:8px;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:10px 12px;background:var(--chip)}
+.stfpanel .picker{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:8px}
+.stfpanel .picker .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.stfpanel .picker .tile{height:76px;border:2px solid var(--line);border-radius:8px;background:#fff;padding:2px;cursor:pointer;overflow:hidden}
+.stfpanel .picker .tile img{width:100%;height:100%;object-fit:contain}.stfpanel .picker .tile.on,.stfpanel .picker .tile:hover{border-color:#ffc20e}
+.stfpanel .jobcard .top .snthumb{width:72px;height:48px}
 .stfpanel .jobcard.unsent{border-left-color:var(--line)}
 .stfpanel .whosee{display:grid;gap:4px;border:1px dashed var(--line);border-radius:8px;padding:8px 10px;flex-basis:100%}
 .stfpanel .whosee label{display:flex;gap:8px;align-items:center;font-size:13px}
@@ -1261,12 +1284,30 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     f.addEventListener("submit", function (ev) { ev.preventDefault(); act(save, j ? "editjob" : "addjob", { code: code.value, title: title.value.trim(), shop: shop.value, people: people || [] }, j ? "Job saved." : "Job added. Press Send to portal when it's ready for them.").catch(function () {}); });
     return f;
   }
+  function pickPicture(j, li) {
+    var old = li.querySelector(".picker"); if (old) { old.remove(); return; }
+    var pk = el("div", { "class": "picker", role: "group", "aria-label": "Pick the job's picture" }); li.appendChild(pk);
+    var forget = function () { if (window.STFNav) window.STFNav.forgetThumb(j.code); };
+    pk.appendChild(el("b", { text: "Pick a picture for " + j.code })); var wait = el("p", { "class": "note", text: "Loading the review's pictures…" }); pk.appendChild(wait);
+    var tiles = el("div", { "class": "tiles" }); pk.appendChild(tiles);
+    var pf = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true });
+    var up = btn("Upload my own…", function () { pf.click(); });
+    pf.addEventListener("change", function () { var fl = pf.files[0]; if (!fl) return; if (fl.size > 4 * 1024 * 1024) { alert("That picture is over 4 MB. Pick a smaller one."); return; }
+      var rd = new FileReader(); rd.onload = function () { forget(); act(up, "jobthumb", { code: j.code, b64: String(rd.result).split(",")[1], mime: fl.type }, j.code + ": picture saved.").catch(function () {}); }; rd.readAsDataURL(fl); });
+    var foot = el("div", { "class": "top" }, [up, pf, j.thumb ? btn("Back to automatic", function (ev) { forget(); act(ev.target, "jobthumb", { code: j.code, clear: true }, j.code + ": back to the job chat's picture (or the plain icon).").catch(function () {}); }) : null, btn("Cancel", function () { pk.remove(); })]);
+    pk.appendChild(foot);
+    run("admin", ["thumbopts", { code: j.code }]).then(function (r) {
+      var o = (r && r.options) || []; wait.textContent = o.length ? "Tap one to use it, or upload your own." : "This job's review has no pictures to pick from. Upload your own.";
+      o.forEach(function (x) { var t = el("button", { type: "button", "class": "tile" + (x.id === j.thumb ? " on" : ""), title: x.name, "aria-label": "Use " + x.name }, [el("img", { src: x.src, alt: "" })]);
+        t.addEventListener("click", function () { forget(); act(t, "jobthumb", { code: j.code, fileId: x.id }, j.code + ": picture changed.").catch(function () {}); }); tiles.appendChild(t); });
+    }, function () { wait.textContent = "Couldn't load suggestions. You can still upload your own."; });
+  }
   function jobRow(j) {
     var li = el("div", { "class": "jobcard" + (j.sent ? "" : " unsent"), "data-job": j.code });
     var show = function () {
       li.innerHTML = "";
       var names = j.people.map(function (u) { var x = person(u); return x ? x.name : null; }).filter(Boolean).join(", ") || "nobody yet";
-      li.appendChild(el("div", { "class": "top" }, [el("span", { "class": j.sent ? "sent" : "unsent", text: j.sent ? "SENT" : "NOT SENT" }), el("b", { text: j.code }),
+      li.appendChild(el("div", { "class": "top" }, [window.STFNav && window.STFNav.thumb ? window.STFNav.thumb(j.code, j.title) : null, el("span", { "class": j.sent ? "sent" : "unsent", text: j.sent ? "SENT" : "NOT SENT" }), el("b", { text: j.code }),
         el("span", { "class": "pmeta", text: (j.title ? j.title + " · " : "") + (shopName(j.shop) || "no shop") + " · can see it: " + names })]));
       var stage = j.review || "";
       var st = function (b, v, msg) { act(b, "stage", { code: j.code, stage: v }, msg).catch(function () {}); };
@@ -1285,6 +1326,8 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
       var more = el("details", { "class": "more" }, [el("summary", { "class": "btn", text: "⋯ More" })]), mbox = el("div");
       if (stage) mbox.appendChild(sb("Withdraw review (nobody can approve until you resend)", "", "Review withdrawn. Press Send review to shop to start again.", "Takes the review away from everyone. The job stays; send the review again when it's ready."));
       if (j.sent) { var un = btn("Un-send (hide from everyone's portal)", function () { if (confirm("Hide " + j.code + " from everyone's portal? Nothing is deleted; press Send to portal to show it again.")) act(un, "send", { code: j.code, sent: false }, j.code + " is hidden from everyone's portal.").catch(function () {}); }); mbox.appendChild(un); }
+      /* P0.9.2: the job's picture on job rows. Change picture shows the review's pictures as suggestions first, then upload. */
+      mbox.appendChild(btn("Change picture…", function () { pickPicture(j, li); }));
       if (mbox.childNodes.length) { more.appendChild(mbox); row.appendChild(more); }
       li.appendChild(row);
       if (j.sent) {
@@ -1460,6 +1503,11 @@ body.sn-review #snbar{margin:0}
 .snshoplogo{display:grid;justify-items:center;gap:4px;flex:0 0 auto}
 .snshoplogo img,.snlogoimg{max-height:64px;max-width:170px;background:#fff;border-radius:8px;padding:4px;display:block}
 .snshoplogo small{font:600 11px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sn-muted)}
+.snthumb{flex:0 0 auto;width:72px;height:48px;border-radius:6px;overflow:hidden;background:var(--sn-soft);border:1px solid var(--sn-line);display:grid;place-items:center;color:var(--sn-muted)}
+.snthumb img{width:100%;height:100%;object-fit:contain;display:block;background:#fff}.snthumb svg{width:34px;height:34px}
+.snthumb.big{width:132px;height:88px}.snthumb.big svg{width:52px;height:52px}
+#snview.sngridview .sngrid>button .snthumb{width:calc(100% + 28px);height:110px;margin:-14px -14px 0;border-radius:10px 10px 0 0;border:0;border-bottom:1px solid var(--sn-line)}
+#snview.sngridview .sngrid>button .snthumb svg{width:52px;height:52px}
 .snlogosm{max-height:28px;max-width:90px;background:#fff;border-radius:5px;padding:2px 4px;flex:0 0 auto}
 .sntwo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
 .sntwo>div{display:grid;gap:8px;min-width:0}
@@ -1570,6 +1618,21 @@ body.sn-review #snbar{margin:0}
   function icon(n) { var s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", "snico"); s.setAttribute("aria-hidden", "true"); s.innerHTML = ICON[n] || ""; return s; }
   /* shop logos are Drive files served by the portal; kept for the session */
   var logoCache = {};
+  /* P0.9.2: job thumbnail: the job's picture (owner upload or the first picture in its review), else a sign or railing icon */
+  var thumbCache = {};
+  var TH_ICON = { sign: '<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="6" y="8" width="28" height="16" rx="2"/><path d="M12 24v10M28 24v10M11 14h18M11 19h12"/></svg>',
+    rail: '<svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M5 12h30M5 32h30M8 12v20M32 12v20M14 12v20M20 12v20M26 12v20"/></svg>' };
+  function thumbKind(t) { t = String(t || ""); return /sign|placard|plaque|letter|logo|address/i.test(t) ? "sign" : "rail"; }
+  function jobThumb(code, title, big) {
+    var box = el("span", { "class": "snthumb" + (big ? " big" : ""), "aria-hidden": "true" });
+    var paint = function (r) { if (r && r.src) { box.innerHTML = ""; box.appendChild(el("img", { src: r.src, alt: "" })); } else box.innerHTML = TH_ICON[(r && r.kind) || thumbKind(title)] || TH_ICON.rail; };
+    paint({ kind: thumbKind(title) });
+    if (!code) return box;
+    var hit = thumbCache[code]; if (!hit) { try { hit = JSON.parse(sessionStorage.getItem("stf-th-" + code) || "null"); } catch (e) {} }
+    if (hit) { thumbCache[code] = hit; paint(hit); return box; }
+    call("thumb", [code]).then(function (r) { thumbCache[code] = r; try { sessionStorage.setItem("stf-th-" + code, JSON.stringify(r)); } catch (e) {} paint(r); }, function () {});
+    return box;
+  }
   function logoImg(id, alt, cls) {
     var im = el("img", { alt: alt || "", "class": cls || "snlogoimg", hidden: true }); if (!id) return im;
     var put = function (u) { im.src = u; im.hidden = false; };
@@ -1863,7 +1926,7 @@ body.sn-review #snbar{margin:0}
           shown.forEach(function (j) {
             var st = jobStage(j);
             list.appendChild(el("button", { type: "button", "class": "snrow", style: "text-align:left;cursor:pointer;font:inherit;color:inherit", onclick: function () { openView("job", { job: j.code, from: "home" }); } },
-              [r === "owner" && j.shopLogo ? logoImg(j.shopLogo, j.shopName || "", "snlogosm") : null, el("span", { "class": "snrt" }, [el("b", { text: j.code }), el("span", { text: (j.title || "") + (r === "owner" && j.shopName ? " · " + j.shopName : "") })]),
+              [jobThumb(j.code, j.title), el("span", { "class": "snrt" }, [el("b", { text: j.code }), el("span", { text: (j.title || "") + (r === "owner" && j.shopName ? " · " + j.shopName : "") })]),
                 j.sent === false ? stageChip("", "Not sent") : stageChip(st), el("span", { "aria-hidden": "true", text: "→" })]));
           });
         };
@@ -1884,7 +1947,7 @@ body.sn-review #snbar{margin:0}
         var dg = el("div", { "class": "sngrid", "data-wn": "drafts" });
         (P.drafts || []).forEach(function (d) {
           var pv = function (as) { return el("a", { "class": "snbtn2", href: href("review", { job: d.code, as: as }) }, [icon("eye"), document.createTextNode("Preview as " + as)]); };
-          dg.appendChild(el("div", { "class": "snrow" }, [el("span", { "class": "snrt" }, [el("b", { text: d.code }), el("span", { text: d.title || "" })]), pv("shop"), pv("client"),
+          dg.appendChild(el("div", { "class": "snrow" }, [jobThumb(d.code, d.title), el("span", { "class": "snrt" }, [el("b", { text: d.code }), el("span", { text: d.title || "" })]), pv("shop"), pv("client"),
             el("button", { type: "button", "class": "snbtn2", text: "Add as job…", onclick: function () { openView("people", { job: d.code, from: "home" }); } })]));
         });
         box.appendChild(dg);
@@ -1902,7 +1965,7 @@ body.sn-review #snbar{margin:0}
       var rv = (P.reviews || []).filter(function (x) { return x.job === j.code; })[0], st = jobStage(j);
       var info = el("div", {}, [el("p", { "class": "snhello", text: j.code }), j.title ? el("p", { text: j.title }) : null,
         el("p", {}, [j.sent === false ? stageChip("", "Not sent to the portal yet") : stageChip(st, STAGE_TXT[st] ? stageText(st) : "No review out right now")])]);
-      var hero = el("div", { "class": "snhero" }, [info]);
+      var hero = el("div", { "class": "snhero" }, [jobThumb(j.code, j.title, true), info]);
       if (j.shopLogo) hero.appendChild(el("div", { "class": "snshoplogo" }, [logoImg(j.shopLogo, j.shopName || ""), el("small", { text: r === "client" ? "Contractor" : (j.shopName || "Shop") })]));
       else if (j.shopName && r !== "client") info.appendChild(el("p", { "class": "snnote", text: "Shop: " + j.shopName }));
       box.appendChild(hero);
@@ -2407,7 +2470,8 @@ body.sn-review #snbar{margin:0}
     context: function (o) { setCtx(o); },
     reviewReady: function () { readyRv(); },
     openView: openView, closeView: closeView, startTour: startTour, runGuide: runGuide, refresh: refreshNav,
-    viewBody: function () { return viewBody; }
+    viewBody: function () { return viewBody; },
+    thumb: jobThumb, forgetThumb: function (code) { delete thumbCache[code]; try { sessionStorage.removeItem("stf-th-" + code); } catch (e) {} }
   };
   document.addEventListener("pointerdown", function (e) { if (e.target && e.target.closest && e.target.closest("#viewer canvas")) window.__snDragged = true; if (e.target && e.target.closest && e.target.closest("#next")) window.__snNexted = true; }, true);
   (window.__stfBoot || Promise.resolve(P)).then(function (b) {
@@ -2421,6 +2485,7 @@ body.sn-review #snbar{margin:0}
       waitPage.then(function () {
         setTimeout(function () {
           var v = Q.get("view"), g = Q.get("guide");
+          setTimeout(function () { if (window.__stfUncover) window.__stfUncover(); }, 60);
           if (Q.get("wn") && role() === "owner") { openView("home", { noFocus: true }); wnStart(); } else if (g) runGuide(g); else if (v) openView(v, { job: Q.get("vjob") || Q.get("job") || "", thread: Q.get("vth") || "", noFocus: true }); else if (PAGE === "cfg" && !Q.get("job")) { openView("home", { noFocus: true }); startTour(false); } else startTour(false);
         }, PAGE === "review" ? 400 : 900);
       });
