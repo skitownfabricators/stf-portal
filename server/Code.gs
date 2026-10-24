@@ -1,6 +1,8 @@
 /**
  * STF Portal (Google Apps Script web app) - rev P0.9, Oct 23 2026. Owner: FAB - Apps.
  *
+ * P0.9.1: owner-only "What's new" review tour. whatsnew(): get my verdicts/notes for a release, save one step's
+ *   verdict (ok | change) + note. Kept in the "whatsnew" tab so FAB - Apps can read Justin's notes.
  * P0.9 (Apps Spec P20, Justin's walkthrough): shop logos + contact details (STF Portal Branding folder), owner saves
  *   return the fresh state (one round trip instead of two), requests list per job, help answers can also close a
  *   question already passed to STF (newest answers/<id>.json wins), newOwnerLink() (run in the editor; the link only
@@ -40,7 +42,7 @@
  * Nothing here shares a file or folder. Deploying the web app ("Anyone") is Justin's own action.
  */
 
-var REV = 'P0.9';
+var REV = 'P0.9.1';
 var SHOP_COLS = ['id', 'name', 'created', 'active', 'logo', 'contact', 'email', 'phone'];
 var POLL_MAX_OPS = 60;
 var FRONT_URL = 'https://skitownfabricators.github.io/stf-portal/';
@@ -94,7 +96,8 @@ function doPost(e) {
       help: function () { return help(k, a[0], a[1] || {}); },
       nav: function () { return nav_(whoFromToken_(k)); },
       requests: function () { return requests(k, a[0] || {}); },
-      inbox: function () { return inbox(k, a[0], a[1] || {}); }
+      inbox: function () { return inbox(k, a[0], a[1] || {}); },
+      whatsnew: function () { return whatsnew(k, a[0], a[1] || {}); }
     };
     if (!fns.hasOwnProperty(req.fn)) throw new Error('invalid_argument');
     out = { ok: true, result: fns[req.fn]() };
@@ -180,6 +183,7 @@ function ensureTables_(ss) {
   ensureSheet_(ss, 'help', HELP_COLS);
   ensureSheet_(ss, 'messages', MSG_COLS);
   ensureSheet_(ss, 'reads', ['uid', 'key', 'at']);
+  ensureSheet_(ss, 'whatsnew', WN_COLS);
 }
 function ensureSheet_(ss, name, header) {
   var sh = ss.getSheetByName(name);
@@ -1076,6 +1080,29 @@ function inbox(token, action, args, asWho) {
 }
 /** P0.9: change requests and questions on one job, as this person may see them: owner = everyone's; shop manager = their own + their
     crew's; client and crew = their own. [{at, from, role, status, message, changes, notes, summary, mine}] newest first. */
+/* ---------- P0.9.1: What's new review (owner only) ---------- */
+var WN_COLS = ['rel', 'id', 'title', 'verdict', 'note', 'at'];
+function whatsnew(token, action, args) {
+  var who = whoFromToken_(token);
+  if (!who || who.role !== 'owner') throw new Error('not_allowed');
+  var rel = String(args.rel || '').slice(0, 20);
+  if (!/^[A-Za-z0-9._-]+$/.test(rel)) throw new Error('invalid_argument');
+  var mine = function () { var m = {}; rows_('whatsnew').forEach(function (r) { if (String(r.rel) === rel) m[String(r.id)] = { verdict: String(r.verdict || ''), note: String(r.note || ''), at: String(r.at), row: r._row }; }); return m; };
+  if (action === 'get') { var m = mine(), out = {}; for (var k in m) out[k] = { verdict: m[k].verdict, note: m[k].note, at: m[k].at }; return { rel: rel, notes: out }; }
+  if (action === 'note') {
+    var id = String(args.id || '').slice(0, 40), v = String(args.verdict || '');
+    if (!/^[A-Za-z0-9_-]+$/.test(id) || ['ok', 'change', 'skip', ''].indexOf(v) < 0) throw new Error('invalid_argument');
+    var lock = LockService.getScriptLock(); lock.waitLock(20000);
+    try {
+      var row = { rel: rel, id: id, title: String(args.title || '').slice(0, 200), verdict: v, note: String(args.note || '').slice(0, 4000), at: new Date().toISOString() };
+      var have = mine()[id];
+      if (have) setCells_('whatsnew', have.row, row); else appendObj_('whatsnew', row);
+    } finally { lock.releaseLock(); }
+    return { ok: true, at: row.at };
+  }
+  throw new Error('invalid_argument');
+}
+
 function requests(token, args) {
   var w = whoFromToken_(token); if (w.role === 'guest' || w.role === 'locked') throw new Error('permission_denied');
   var job = String((args && args.job) || ''), all = job === '*' && w.role === 'owner'; /* owner: '*' = every job */
