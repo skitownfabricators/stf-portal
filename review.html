@@ -1550,7 +1550,7 @@ body.sn-review #snbar{margin:0}
     if (badge) { badge.hidden = !n; badge.textContent = n; badge.setAttribute("aria-label", n + " waiting"); }
     if (qDot) qDot.hidden = !P.helpNew;
   }
-  function refreshNav() { return call("nav", []).then(function (n) { P.attention = n.attention; P.helpNew = n.helpNew; paintBadges(); }, function () {}); }
+  function refreshNav() { return call("nav", []).then(function (n) { P.attention = n.attention; P.helpNew = n.helpNew; wnApply(); paintBadges(); }, function () {}); }
 
   /* ---------- drawer ---------- */
   var shade, drawer, openJob = null;
@@ -1574,6 +1574,7 @@ body.sn-review #snbar{margin:0}
     if (a.kind === "help") return item(a.text, { go: function () { openView("helpadmin"); } });
     if (a.kind === "inbox") return item(a.text, { go: function () { openView("inbox"); } });
     if (a.kind === "requests") return item(a.text, { go: function () { openView("requests"); } });
+    if (a.kind === "whatsnew") return item(a.text, { go: function () { wnStart(); } });
     return item(a.text || "", { go: function () {} });
   }
   function jobParts(j) {
@@ -1765,6 +1766,7 @@ body.sn-review #snbar{margin:0}
         if (a.kind === "help") return { t: a.text, go: function () { openView("helpadmin", { from: "home" }); } };
         if (a.kind === "inbox") return { t: a.text, go: function () { openView("inbox", { from: "home" }); } };
         if (a.kind === "requests") return { t: a.text, go: function () { openView("requests", { from: "home" }); } };
+        if (a.kind === "whatsnew") return { t: a.text, s: "only you see this", go: function () { wnStart(); } };
         return { t: a.text || "", go: function () {} };
       })));
       if (r === "owner" || r === "manager") {
@@ -1894,10 +1896,12 @@ body.sn-review #snbar{margin:0}
         var ups = (L.notes || []).map(function (n) { return { at: n.at, un: n.unread, b: n.text, s: n.job || "" }; })
           .concat(helps.filter(function (h) { return h.status !== "new"; }).map(function (h) { return { at: h.answeredAt || h.at, un: !h.seen, b: (h.status === "to_stf" ? "Passed to Ski Town Fabricators: " : "Answer to your question: ") + h.question, s: h.answer || "", help: true }; }));
         ups.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+        if (wnOpen()) ups.unshift({ at: new Date().toISOString(), un: true, b: wnText() + " (only you see this)", s: "Each step shows a change on screen; mark it Looks good or Needs a change and add a note. This clears itself when every step is marked.", wn: true });
         if (!ups.length) box.appendChild(el("p", { "class": "snnote", text: "Nothing yet. Request updates and help answers land here." }));
         ups.slice(0, 40).forEach(function (u) {
           var c = el("div", { "class": "snqa" + (u.un ? "" : " wait") }, [el("div", { "class": "snqm", text: fmtAt(u.at) + (u.un ? " · new" : "") }), el("b", { text: u.b })]);
           if (u.help && u.s) answerBlocks(u.s).forEach(function (n) { c.appendChild(n); }); else if (u.s) c.appendChild(el("span", { "class": "snnote", text: u.s }));
+          if (u.wn) { c.firstChild.textContent = "Now · new"; c.appendChild(el("div", {}, [el("button", { type: "button", "class": "snbtn2 pri", text: wnCount() ? "Continue review" : "Start review", onclick: function () { wnStart(); } })])); }
           box.appendChild(c);
         });
         if ((L.notes || []).some(function (n) { return n.unread; })) call("inbox", ["notes", { seen: true }]).then(function () { refreshNav(); }, function () {});
@@ -2277,6 +2281,15 @@ body.sn-review #snbar{margin:0}
   function wnLoad() { if (WN.notes) return Promise.resolve(WN.notes); if (!WN.loading) WN.loading = call("whatsnew", ["get", { rel: WN_REL }]).then(function (r) { WN.notes = r.notes || {}; return WN.notes; }, function (e) { WN.loading = null; throw e; }); return WN.loading; }
   function wnCount() { var n = 0, m = WN.notes || {}; wnSteps().forEach(function (x) { if (x.id && m[x.id] && m[x.id].verdict) n++; }); return n; }
   function wnTotal() { return wnSteps().filter(function (x) { return x.id; }).length; }
+  function wnOpen() { return role() === "owner" && !!WN.notes && wnCount() < wnTotal(); }
+  function wnText() { var n = wnCount(), t = wnTotal(); return "What's new in " + WN_REL + (n ? ": " + n + " of " + t + " reviewed" : ": " + t + " changes to review"); }
+  /* P0.9.1: an open review also shows in Needs my attention (and the red count) until every step is marked */
+  function wnApply() {
+    if (role() !== "owner") return;
+    var a = (P.attention || []).filter(function (x) { return x.kind !== "whatsnew"; });
+    if (wnOpen()) a.push({ kind: "whatsnew", text: wnText() });
+    P.attention = a;
+  }
   function wnStart() {
     if (role() !== "owner") return;
     if (PAGE !== "cfg") { location.href = href("cfg", { wn: "1" }); return; }
@@ -2301,7 +2314,7 @@ body.sn-review #snbar{margin:0}
       if (st.id === "other" && !ta.value.trim()) vv = "skip";
       sv.className = "snsv"; sv.textContent = "Saving…";
       return call("whatsnew", ["note", { rel: WN_REL, id: st.id, title: st.title, verdict: vv, note: ta.value.trim() }]).then(function (r) {
-        WN.notes = WN.notes || {}; WN.notes[st.id] = { verdict: vv, note: ta.value.trim(), at: r.at }; dirty = false; sv.textContent = "Saved ✓";
+        WN.notes = WN.notes || {}; WN.notes[st.id] = { verdict: vv, note: ta.value.trim(), at: r.at }; dirty = false; sv.textContent = "Saved ✓"; wnApply(); paintBadges();
         if (viewName === "home") { var bn = $("#snview .snwnban"); if (bn) wnPaint(bn); }
       }, function (e) { sv.className = "snsv err"; sv.textContent = "Couldn't save. Check your connection and press again."; throw e; });
     } };
@@ -2332,6 +2345,7 @@ body.sn-review #snbar{margin:0}
     try { var th = store.get("stf-theme"); if (th === "light" || th === "dark") document.documentElement.setAttribute("data-theme", th); } catch (e) {}
     var go = function () {
       buildBar(); paintMode();
+      if (role() === "owner") wnLoad().then(function () { wnApply(); paintBadges(); if (viewName === "home" && !cur) openView("home", { noFocus: true }); }, function () {});
       var waitPage = PAGE === "review" ? readyP : Promise.resolve();
       waitPage.then(function () {
         setTimeout(function () {
