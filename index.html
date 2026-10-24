@@ -1146,7 +1146,7 @@ renderOpts(); rebuild(); renderChanges(); renderNotes(); size(); loadLibs();
     ppl.forEach(function (x) { ul.appendChild(personRow(x)); });
     pb.appendChild(ul); p.appendChild(pb);
     // ---- shops ----
-    var sb = el("div", { "class": "box" }, [el("h3", { text: "Shops" })]);
+    var sb = el("div", { "class": "box", "data-wn": "shops" }, [el("h3", { text: "Shops" })]);
     if (!(S.shops || []).length) sb.appendChild(el("p", { "class": "note", text: "No shops yet. Add one (e.g. your fabricator) before adding shop managers." }));
     (S.shops || []).forEach(function (x) { sb.appendChild(shopRow(x)); });
     var sIn = el("input", { placeholder: "New shop name", "aria-label": "New shop name" }), sBtn = el("button", { type: "submit", "class": "btn", text: "Add shop" });
@@ -1504,6 +1504,17 @@ body.sn-review #snbar{margin:0}
 #sncard .snrowb{justify-content:space-between}
 #sncard .snskip{background:none;border:0;color:var(--sn-muted);text-decoration:underline;font:14px system-ui;cursor:pointer;padding:6px 0}
 @media (max-width:600px){#snbar .sntitle,#snbar .snwho,#snview .snvhead .snwho{display:none}#snbar .snctx{flex-basis:0;font-size:12px}.snlogo{height:30px}#snview.snhome .snvhead h2{font-size:15px}}
+#sncard .snwn{display:grid;gap:8px;border-top:1px solid #3a414b;padding-top:10px}
+#sncard .snwn .snrowb{justify-content:flex-start;gap:8px;flex-wrap:wrap}
+#sncard .snwn .snbtn2{min-height:38px;padding:7px 12px}
+#sncard .snwn .snbtn2[aria-pressed="true"].ok{background:#1e8e3e;border-color:#1e8e3e;color:#fff}
+#sncard .snwn .snbtn2[aria-pressed="true"].chg{background:#ffc20e;border-color:#ffc20e;color:#111}
+#sncard .snwn textarea{width:100%;min-height:58px;font:14px/1.4 system-ui;border-radius:8px;border:1px solid #c4cad1;background:#262b32;color:#fff;padding:8px}
+#sncard .snwn .snsv{font-size:12px;color:#9be2b0}#sncard .snwn .snsv.err{color:#ff9b93}
+#sncard .snck{font-size:12px;color:#c4cad1}
+.snwnban{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:2px solid #ffc20e;background:#fff8dc;color:#3b2c00;border-radius:12px;padding:10px 14px}
+[data-theme="dark"] .snwnban{background:#3a300a;color:#ffe9a8}
+.snwnban b{font-size:15px}.snwnban .snbtn2.pri{background:#ffc20e;color:#111;border-color:#ffc20e}
 @media (max-width:600px){#sncard{left:16px!important;right:16px;bottom:16px;top:auto!important;width:auto;transform:none!important}}
 </style>
 <script>
@@ -1695,6 +1706,7 @@ body.sn-review #snbar{margin:0}
     var defs = [["Take the tour", function () { startTour(true); }], ["Show me how to…", function () { openView("howto"); }], ["Common questions", function () { openView("faq"); }],
       ["Ask Ski Town Fabricators", function () { openView("ask"); }]];
     if (kind === "li") { defs.push(["Email notices", function () { openView("notices"); }]); defs.push(["Light or dark", function () { openView("appearance"); }]); }
+    if (role() === "owner") defs.push(["What's new (" + WN_REL + ")", function () { wnStart(); }]);
     if (role() === "owner" && kind === "li") defs.push(["Help questions (everyone's)", function () { openView("helpadmin"); }, (P.attention || []).some(function (a) { return a.kind === "help"; })]);
     if (kind === "li") { var ul = el("ul"); defs.forEach(function (d) { ul.appendChild(item(d[0], { go: d[1], dot: d[2] })); }); return ul; }
     var w = el("div", { role: "menu" }); w.appendChild(el("b", { text: "Help" }));
@@ -1707,7 +1719,7 @@ body.sn-review #snbar{margin:0}
   function togglePop() { if (pop) return closePop(); pop = el("div", { id: "snpop" }); pop.appendChild(helpList("pop")); pop.addEventListener("keydown", function (e) { if (e.key === "Escape") { closePop(); qBtn.focus(); } }); document.body.appendChild(pop); setTimeout(function () { document.addEventListener("click", outside, true); }, 0); var b = $("button", pop); if (b) b.focus(); }
 
   /* ---------- full-page views ---------- */
-  var view = null, viewBody = null, viewName = "";
+  var view = null, viewBody = null, viewName = "", viewJob = "";
   function closeView() { if (view) view.remove(); view = viewBody = null; viewName = ""; document.body.style.overflow = ""; try { var u = new URL(location.href); if (u.searchParams.has("view") || u.searchParams.has("vjob")) { u.searchParams.delete("view"); u.searchParams.delete("vjob"); u.searchParams.delete("vth"); history.replaceState(null, "", u); } } catch (e) {} }
   function goHome() { if (PAGE === "cfg") openView("home", { noFocus: true }); else location.href = href("cfg", { view: "home" }); }
   /* P0.9: the open view is kept in the address, so a refresh reopens the same place */
@@ -1726,7 +1738,7 @@ body.sn-review #snbar{margin:0}
       : [el("h2", { text: T[name] || name }), who, opts.from === "home" || PAGE !== "cfg" ? el("button", { type: "button", text: "← Home", onclick: function () { goHome(); } }) : el("button", { type: "button", text: "Close ✕", onclick: closeView })];
     view = el("section", { id: "snview", role: "dialog", "aria-modal": "true", "aria-label": T[name] || name, "class": name === "home" ? "snhome" : null }, [el("div", { "class": "snvhead" }, headBtns), viewBody]);
     view.addEventListener("keydown", function (e) { if (e.key === "Escape" && !cardEl && viewName !== "home") closeView(); });
-    document.body.appendChild(view); document.body.style.overflow = "hidden"; viewName = name;
+    document.body.appendChild(view); document.body.style.overflow = "hidden"; viewName = name; viewJob = opts.job || "";
     (VIEWS[name] || function () { viewBody.appendChild(el("p", { text: "Not found." })); })(viewBody, opts);
     var h = $("button", view); if (h && !opts.noFocus) h.focus();
   }
@@ -1788,6 +1800,7 @@ body.sn-review #snbar{margin:0}
       var lb = function (v, t) { return el("button", { type: "button", "aria-pressed": String(lay === v), onclick: function () { store.set("stf-layout", v); openView("home", { noFocus: true }); } }, [document.createTextNode(t)]); };
       box.appendChild(el("div", { "class": "snlayout", role: "group", "aria-label": "Show as" }, [lb("list", "☰ List"), lb("grid", "▦ Grid")]));
       var nav = function (h) { return function () { location.href = h; }; };
+      if (r === "owner") wnBanner(box);
       /* welcome box; shop staff see their shop's logo, clients see their contractor's */
       var hero = el("div", { "class": "snhero" }, [el("div", {}, [el("p", { "class": "snhello", text: "Welcome, " + first() + "." }),
         el("p", { "class": "snnote", text: r === "owner" ? "Everything in the portal starts here: what needs you, every job, people and help."
@@ -1850,7 +1863,7 @@ body.sn-review #snbar{margin:0}
       if (r === "owner" && (P.drafts || []).length) {
         box.appendChild(el("h3", { text: "Reviews ready to send (only you see these)" }));
         box.appendChild(el("p", { "class": "snnote", text: "A job chat published these reviews. Preview them, then add one as a job; nobody sees it until you press Send to portal." }));
-        var dg = el("div", { "class": "sngrid" });
+        var dg = el("div", { "class": "sngrid", "data-wn": "drafts" });
         (P.drafts || []).forEach(function (d) {
           var pv = function (as) { return el("a", { "class": "snbtn2", href: href("review", { job: d.code, as: as }) }, [icon("eye"), document.createTextNode("Preview as " + as)]); };
           dg.appendChild(el("div", { "class": "snrow" }, [el("span", { "class": "snrt" }, [el("b", { text: d.code }), el("span", { text: d.title || "" })]), pv("shop"), pv("client"),
@@ -2221,34 +2234,38 @@ body.sn-review #snbar{margin:0}
     var before = Promise.resolve();
     if (st.drawer) { closeView(); openDrawer(); before = waitFor(sel, 1500); }
     else if (drawer && cur.i > 0 && !st.done) closeDrawerSilently();
-    if (st.view && viewName !== st.view) { closeDrawerSilently(); openView(st.view, { noFocus: true }); before = waitFor(sel, 5000); }
+    var vo = st.vopts ? st.vopts() : {};
+    if (st.view && (viewName !== st.view || (vo.job && vo.job !== viewJob))) { closeDrawerSilently(); vo.noFocus = true; openView(st.view, vo); before = waitFor(sel, 5000); }
     else if (sel) before = before.then(function () { return waitFor(sel, 600); });
     before.then(function () {
       if (!cur) return;
-      var t = sel ? $(sel) : null; if (t && visible(t) && !st.drawer && !(view && view.contains(t))) { t.scrollIntoView({ block: "center", behavior: "instant" in document.documentElement.style ? "instant" : "auto" }); }
+      var t = sel ? $(sel) : null; if (t && t.tagName === "DETAILS" && cur.wn) t.open = true;
+      if (t && visible(t) && !st.drawer && !(view && view.contains(t))) { t.scrollIntoView({ block: "center", behavior: "instant" in document.documentElement.style ? "instant" : "auto" }); }
       else if (t && view && view.contains(t)) t.scrollIntoView({ block: "center" });
       if (!ringEl) { ringEl = el("div", { id: "snring", "aria-hidden": "true" }); document.body.appendChild(ringEl); }
       if (cardEl) cardEl.remove();
       var last = cur.i === cur.steps.length - 1, never = el("input", { type: "checkbox" }), m = curMode();
       var firstRun = cur.tour && !store.get(tourKey());
       var tryBox = st.tryText ? el("div", { "class": "sntry", role: "status", text: "Your turn: " + st.tryText }) : null;
-      var nextB = el("button", { type: "button", "class": "snbtn2 pri", text: last ? "Done" : st.tryText ? "Skip this step" : "Next", onclick: function () { if (last) { endSteps(never.checked ? "never" : "done"); } else { cur.i++; showStep(); } } });
+      var wnB = cur.wn && st.id ? wnBlock(st) : null;
+      var go = function (d) { var f = function () { if (!cur) return; if (d > 0 && last) return endSteps(""); cur.i += d; showStep(); }; if (wnB) wnB.save().then(f, function () {}); else f(); };
+      var nextB = el("button", { type: "button", "class": "snbtn2 pri", text: last ? "Done" : st.tryText ? "Skip this step" : "Next", onclick: function () { if (cur.wn) return go(1); if (last) { endSteps(never.checked ? "never" : "done"); } else { cur.i++; showStep(); } } });
       cardEl = el("div", { id: "sncard", role: "dialog", "aria-modal": "false", "aria-labelledby": "sncardt" }, [
         el("span", { "class": "sncnt", text: (cur.tour ? "Tour" : cur.title) + " · " + (cur.i + 1) + " of " + cur.steps.length + (cur.tour && m ? " · " + (m === "demo" ? "Demo (practice)" : "Guide (saved)") : "") }),
-        el("b", { id: "sncardt", text: T(st.title) }), el("p", { text: T(st.text) }), tryBox,
+        el("b", { id: "sncardt", text: T(st.title) }), el("p", { text: T(st.text) }), st.ck ? el("span", { "class": "snck", text: "From your walkthrough: " + st.ck }) : null, tryBox, wnB ? wnB.node : null,
         cur.tour && !firstRun ? el("label", {}, [never, document.createTextNode(" Don't show this tour again")]) : null,
-        el("div", { "class": "snrowb" }, [el("button", { type: "button", "class": "snskip", text: cur.tour ? (firstRun ? "Skip for now" : "Skip tour") : "Close", onclick: function () { endSteps(never.checked ? "never" : firstRun ? "later" : ""); } }),
-          el("span", { "class": "snrowb" }, [cur.i ? el("button", { type: "button", "class": "snbtn2", text: "Back", onclick: function () { cur.i--; showStep(); } }) : null, nextB])])]);
+        el("div", { "class": "snrowb" }, [el("button", { type: "button", "class": "snskip", text: cur.tour ? (firstRun ? "Skip for now" : "Skip tour") : cur.wn ? "Stop for now" : "Close", onclick: function () { if (wnB) { wnB.save().then(function () { endSteps(""); }, function () {}); return; } endSteps(never.checked ? "never" : firstRun ? "later" : ""); } }),
+          el("span", { "class": "snrowb" }, [cur.i ? el("button", { type: "button", "class": "snbtn2", text: "Back", onclick: function () { if (cur.wn) return go(-1); cur.i--; showStep(); } }) : null, nextB])])]);
       cardEl.addEventListener("keydown", function (e) { if (e.key === "Escape") endSteps(never.checked ? "never" : ""); });
       document.body.appendChild(cardEl);
       requestAnimationFrame(function () { mobileFit(t); place(); }); setTimeout(place, 250);
-      if (!st.tryText) nextB.focus({ preventScroll: true });
+      if (!st.tryText && !wnB) nextB.focus({ preventScroll: true });
       /* "Your turn": watch for the person doing it, then move on */
       if (st.done) { var at = cur.i; tryTimer = setInterval(function () { if (!cur || cur.i !== at) { clearInterval(tryTimer); return; } var ok0 = false; try { ok0 = st.done(); } catch (e) {}
         if (ok0) { clearInterval(tryTimer); tryBox.className = "sntry done"; tryBox.textContent = "✓ Done. Nice!"; nextB.textContent = last ? "Done" : "Next"; setTimeout(function () { if (cur && cur.i === at && !last) { cur.i++; showStep(); } }, 1100); } else place(); }, 400); }
     });
   }
-  function run(steps, opts) { if (cur) endSteps(""); closePop(); cur = { steps: steps, i: 0, tour: !!opts.tour, title: opts.title || "" }; window.addEventListener("resize", place); window.addEventListener("scroll", place, true); showStep(); }
+  function run(steps, opts) { if (cur) endSteps(""); closePop(); cur = { steps: steps, i: opts.start || 0, tour: !!opts.tour, wn: !!opts.wn, title: opts.title || "" }; window.addEventListener("resize", place); window.addEventListener("scroll", place, true); showStep(); }
   function startTour(force, mode) {
     if (P.role === "guest" || !P.uid) return;
     var seen = store.get(tourKey());
@@ -2279,6 +2296,82 @@ body.sn-review #snbar{margin:0}
     run(g.steps.map(function (s) { var o = {}; for (var k in s) o[k] = s[k]; if (g.view && !o.view && !o.drawer) o.view = g.view; return o; }), { title: g.title });
   }
 
+  /* ---------- P0.9.1: What's new (owner only). One list per release: each step opens the place, rings what changed, and
+     Justin marks it Looks good / Needs a change with a note. Saved on the server (whatsnew tab) for FAB - Apps to read. ---------- */
+  var WN_REL = "P0.9", WN = { notes: null, loading: null };
+  function wnJob() { var j = (P.jobs || []).filter(function (x) { return x.sent !== false; })[0] || (P.jobs || [])[0]; return j ? j.code : ""; }
+  function wnSteps() {
+    var home = function (x) { x.view = "home"; return x; }, cfg = function () { closeDrawerSilently(); closeView(); };
+    return [
+      { title: "What's new in " + WN_REL, text: "This walks you through everything I changed from your walkthrough, on the real screens. On each step press Looks good or Needs a change, and add a note if you like. Notes save as you go, so you can stop any time and pick up where you left off (? › What's new)." },
+      home({ id: "logo", ck: "B1", sel: "#snview.snhome .snvhead", title: "STF logo and title", text: "Your logo sits between Menu and \"Ski Town Fabricators Portal\" (Portal capitalized). Shop managers and crew also see their shop's logo to the right of Welcome. Clients see their contractor's logo, labeled Contractor." }),
+      home({ id: "progress", ck: "B2", sel: "#snview .sntwo", title: "Job progress", text: "Next to Needs my attention: each job with a review out and who it's waiting on (shop, client or STF). \"All jobs in Job status →\" opens the full list." }),
+      home({ id: "layout", ck: "G (list or grid)", sel: "#snview .snlayout", title: "List or Grid", text: "Each person picks how home looks: rows (List) or big buttons (Grid). It's remembered on that device. Try both." }),
+      home({ id: "filters", ck: "E1", sel: "#snview .snfilters", title: "Shop and Stage filters", text: "Filter the jobs by shop and by stage. Shop managers and crew get the Stage filter too. Clients don't need it. Your pick is remembered." }),
+      home({ id: "drafts", ck: "B3, F1, G8", sel: "#snview [data-wn=drafts]", title: "Reviews ready to send", text: "Reviews a job chat published that aren't portal jobs yet. Each has eye-icon Preview as shop / Preview as client buttons and Add as job…, which fills in the job code from the review (no copy and paste)." }),
+      { id: "attention", ck: "G14", drawer: true, sel: '#sndrawer [data-nav="attention"]', title: "Needs my attention, only yours", text: "Crew requests waiting on a shop manager now go to that manager's Needs my attention and Inbox, not yours. You see them in Job status. Permission requests reach you only when you must authorize them." },
+      { id: "inboxmenu", ck: "C3", drawer: true, sel: '#sndrawer [data-nav="inbox"]', title: "Inbox in the menu", text: "New: the Inbox, with the unread count. Job status (all jobs) is under Jobs, only for you." },
+      { id: "inbox", ck: "C3", view: "inbox", sel: "#snview .snvbody", title: "Inbox", text: "Per job: Job chat (client + shop + STF), Shop team (managers + crew; you don't see it) and a private line with you. Updates collect request status changes and \"a review is waiting\". Messages take photos and pasted screenshots and refresh every 30 seconds." },
+      { id: "status", ck: "G14", view: "status", sel: "#snview .snvbody", title: "Job status (all jobs)", text: "Every job in one table: stage, who it's waiting on, requests (new / in progress), crew items held by a manager, unread messages and the last activity. It turns into cards on a phone." },
+      { id: "job", ck: "B3, E7, E8", view: "job", vopts: function () { return { job: wnJob() }; }, sel: "#snview .sntools", title: "Job overview", text: "Each tool has an icon and a line saying what it does. Messages opens the job's conversations. Requests now opens the list with statuses. Build Package Deliverables (shop drawings, assembly instructions, BOM) is marked coming soon." },
+      { id: "jobs", ck: "G8, G9, G10, G11", view: "people", sel: "[data-tour=jobs]", title: "Portal jobs (first on the page)", text: "Job cards with Send to portal. \"Back to shop\" is now \"Take back from client (return to shop)\" and explains itself before it runs. Withdraw review and Un-send moved under ⋯ More. The client-signature checkbox sits on the card." },
+      { id: "jobform", ck: "G7", view: "people", sel: "[data-tour=job-form]", title: "Who can see this job", text: "Adding a job now shows a tick list of that shop's managers and clients (the manager is pre-ticked), instead of the confusing person dropdown." },
+      { id: "people", ck: "G, G4, G5", view: "people", sel: "[data-tour=people]", title: "People rows", text: "Each person has a colored can-do line for their own permissions. Saves, on/off and permission changes show Saving… then Saved ✓ and take one trip to the server instead of two (faster)." },
+      { id: "shops", ck: "G1, G2", view: "people", sel: "[data-wn=shops]", title: "Shops: logo and contact details", text: "Each shop shows its logo. Edit sets the main contact, email, phone and uploads a logo. Contact details opens a small panel." },
+      { id: "notices", ck: "Notify", view: "notices", sel: "#snview .snvbody", title: "Email notices", text: "Short emails when something reaches a person (new job, review waiting, message, request status). They come from the STF Gmail as \"STF Portal\", and replies go to you. At most one per person per topic every 10 minutes. Anyone can switch them off here." },
+      { id: "theme", ck: "E2-E5", view: "appearance", sel: "#snview .snvbody", title: "Blueprint colors, light or dark", text: "The Blueprint scheme you picked (steel blue and yellow), and each person can choose light, dark or match the device." },
+      { id: "tour", ck: "B6, H1", sel: "#snq", prep: function () { closeDrawerSilently(); openView("home", { noFocus: true }); }, title: "Tour: Demo and Guide", text: "First visit starts the tour in Demo (practice, nothing saved) with Skip for now. \"Your turn\" steps wait for the person to do it, including attaching a photo. The amber DEMO / green GUIDE bar shows what's saved, with a switch. Menu steps open the menu and point at the exact button. Try it after this: ? › Take the tour." },
+      { id: "answers", ck: "H3, H4", view: "mine", sel: "#snview .snvbody", title: "Help answers with links", text: "Place names in answers (Needs my attention, Review & approval and the rest) are buttons that open that place. The approved-review question has a stock answer with a link to the review. Refreshing the page now keeps you where you were." },
+      { id: "cfgtitle", ck: "E6", prep: cfg, sel: "#cfgtitle", title: "Configurator title", text: "It says STF Owner Configurator, Shop Configurator or Client Configurator depending on who's looking. The extra \"Ski Town Fabricators\" is gone." },
+      { id: "model", ck: "I2, I8", prep: cfg, sel: "#viewer", title: "Trim and holes", text: "Raised trim: the bottom rail sits above the trim, horizontals start from the trim top, verticals keep under 4\" above it with shorter pickets, and cable gaps stay 3\" or less. Holes now show on every plate (5/16\", or 7/16\" into concrete, tile or masonry), fascia plates, round plates and sign tabs. Try a mount change." },
+      { id: "opts", ck: "I6, I7", prep: cfg, sel: "#opts", title: "Options panel", text: "Client view hides the shop-only items (trim height, code basis, joint, what it mounts to, anchor). The model stays pinned while you scroll the options. On a phone the options sit in two columns under the model, with the color list full width." },
+      { id: "phone", ck: "B7", title: "On your phone", text: "Open your link on your phone: the sideways scrolling is fixed (the pages were missing a phone-size setting). Check home, Inbox, Job status and the configurator there." },
+      { id: "other", title: "Anything else?", text: "Anything you noticed that isn't covered above? Put it here. When you finish, tell FAB - Apps \"notes done\" and I'll read them all." }
+    ];
+  }
+  function wnLoad() { if (WN.notes) return Promise.resolve(WN.notes); if (!WN.loading) WN.loading = call("whatsnew", ["get", { rel: WN_REL }]).then(function (r) { WN.notes = r.notes || {}; return WN.notes; }, function (e) { WN.loading = null; throw e; }); return WN.loading; }
+  function wnCount() { var n = 0, m = WN.notes || {}; wnSteps().forEach(function (x) { if (x.id && m[x.id] && m[x.id].verdict) n++; }); return n; }
+  function wnTotal() { return wnSteps().filter(function (x) { return x.id; }).length; }
+  function wnStart() {
+    if (role() !== "owner") return;
+    if (PAGE !== "cfg") { location.href = href("cfg", { wn: "1" }); return; }
+    if (curMode()) setMode("");
+    closePop();
+    wnLoad().then(function (m) {
+      var S = wnSteps(), i = 0; if (wnCount()) { for (i = 1; i < S.length; i++) if (S[i].id && !(m[S[i].id] && m[S[i].id].verdict)) break; if (i >= S.length) i = 0; }
+      run(S, { wn: true, title: "What's new", start: i });
+    }, function () { openView("home"); msg(viewBody, "Couldn't load What's new. Try again in a moment.", true); });
+  }
+  function wnBlock(st) {
+    var have = (WN.notes || {})[st.id] || {}, v = have.verdict || "", dirty = false;
+    var ta = el("textarea", { "aria-label": "Your note", placeholder: st.id === "other" ? "Anything else you noticed…" : "Note (optional): what to change, or what you liked" }); ta.value = have.note || "";
+    var sv = el("span", { "class": "snsv", role: "status", text: have.at ? "Saved ✓ " + fmtAt(have.at) : "" });
+    var b = function (k, t, c) { var x = el("button", { type: "button", "class": "snbtn2 " + c, "aria-pressed": String(v === k), text: t, onclick: function () { v = v === k ? "" : k; dirty = true; bOk.setAttribute("aria-pressed", String(v === "ok")); bCh.setAttribute("aria-pressed", String(v === "change")); if (v === "change") ta.focus(); } }); return x; };
+    var bOk = b("ok", "✓ Looks good", "ok"), bCh = b("change", "✎ Needs a change", "chg");
+    ta.addEventListener("input", function () { dirty = true; });
+    var node = el("div", { "class": "snwn" }, [st.id === "other" ? null : el("div", { "class": "snrowb" }, [bOk, bCh]), ta, sv]);
+    return { node: node, save: function () {
+      if (!dirty) return Promise.resolve();
+      var vv = v || (ta.value.trim() ? (st.id === "other" ? "change" : "change") : "");
+      if (st.id === "other" && !ta.value.trim()) vv = "skip";
+      sv.className = "snsv"; sv.textContent = "Saving…";
+      return call("whatsnew", ["note", { rel: WN_REL, id: st.id, title: st.title, verdict: vv, note: ta.value.trim() }]).then(function (r) {
+        WN.notes = WN.notes || {}; WN.notes[st.id] = { verdict: vv, note: ta.value.trim(), at: r.at }; dirty = false; sv.textContent = "Saved ✓";
+        if (viewName === "home") { var bn = $("#snview .snwnban"); if (bn) wnPaint(bn); }
+      }, function (e) { sv.className = "snsv err"; sv.textContent = "Couldn't save. Check your connection and press again."; throw e; });
+    } };
+  }
+  function wnPaint(ban) {
+    var n = wnCount(), t = wnTotal(); ban.innerHTML = "";
+    if (n >= t) { ban.appendChild(el("span", {}, [el("b", { text: "What's new in " + WN_REL + ": all " + t + " reviewed ✓" }), el("br"), el("span", { text: "Tell FAB - Apps \"notes done\". You can still change any note." })])); ban.appendChild(el("button", { type: "button", "class": "snbtn2", text: "Look again", onclick: wnStart })); return; }
+    ban.appendChild(el("span", {}, [el("b", { text: "What's new in " + WN_REL + (n ? ": " + n + " of " + t + " reviewed" : ": " + t + " changes to check") }), el("br"), el("span", { text: "Only you see this. Each step shows a change on screen; mark it and add a note." })]));
+    ban.appendChild(el("button", { type: "button", "class": "snbtn2 pri", text: n ? "Continue review" : "Start review", onclick: wnStart }));
+  }
+  function wnBanner(box) {
+    var ban = el("div", { "class": "snwnban", role: "region", "aria-label": "What's new" }); box.appendChild(ban);
+    if (WN.notes) wnPaint(ban); else { ban.appendChild(el("span", { text: "What's new in " + WN_REL + "…" })); wnLoad().then(function () { wnPaint(ban); }, function () { ban.remove(); }); }
+  }
+
   /* ---------- start ---------- */
   var readyRv = null, readyP = new Promise(function (r) { readyRv = r; });
   window.STFNav = {
@@ -2298,7 +2391,7 @@ body.sn-review #snbar{margin:0}
       waitPage.then(function () {
         setTimeout(function () {
           var v = Q.get("view"), g = Q.get("guide");
-          if (g) runGuide(g); else if (v) openView(v, { job: Q.get("vjob") || Q.get("job") || "", thread: Q.get("vth") || "", noFocus: true }); else if (PAGE === "cfg" && !Q.get("job")) { openView("home", { noFocus: true }); startTour(false); } else startTour(false);
+          if (Q.get("wn") && role() === "owner") { openView("home", { noFocus: true }); wnStart(); } else if (g) runGuide(g); else if (v) openView(v, { job: Q.get("vjob") || Q.get("job") || "", thread: Q.get("vth") || "", noFocus: true }); else if (PAGE === "cfg" && !Q.get("job")) { openView("home", { noFocus: true }); startTour(false); } else startTour(false);
         }, PAGE === "review" ? 400 : 900);
       });
     };
